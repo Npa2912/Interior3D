@@ -3,6 +3,7 @@
 #include "Scene.h"
 #include <QElapsedTimer>
 #include <QHash>
+#include <QSet>
 #include <QOpenGLBuffer>
 #include <QOpenGLFunctions_3_3_Core>
 #include <QOpenGLShaderProgram>
@@ -68,7 +69,10 @@ private:
     QOpenGLBuffer vbo;
     QElapsedTimer meter, step;
     QTimer animation;
-    QHash<int,quint32> keys;
+    QSet<int> keys;
+#ifdef Q_OS_WIN
+    unsigned blockedNativeKeys = 0;
+#endif
     QString error;
     int selected = 0, frameCount = 0, roundedCount = 0;
     bool grid = false, uniformScale = false, dragging = false, cursorCaptured = false;
@@ -96,6 +100,7 @@ private:
     void cleanup();
     void tick();
     bool moveCamera(float seconds);
+    void resetCameraInput();
     const Object *firstObject(const QString &kind) const;
     QMatrix4x4 remoteTransform() const;
     void drawRemote(const QMatrix4x4 &transform, bool held);

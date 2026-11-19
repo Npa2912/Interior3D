@@ -52,6 +52,7 @@ void EditorTest::sceneRoundTrip() {
     source.light.directional=.7f;
     source.light.color=QColor("#f5ca96");
     source.camera.mode=ViewMode::Plan;
+    source.camera.pitch=-75;
     const QString path=folder.filePath("phòng.int3d");
     QVERIFY(source.save(path));
     Scene loaded;
@@ -59,6 +60,7 @@ void EditorTest::sceneRoundTrip() {
     QCOMPARE(loaded.room,source.room);
     QCOMPARE(loaded.objects.size(),source.objects.size());
     QCOMPARE(loaded.camera.mode,ViewMode::Plan);
+    QCOMPARE(loaded.camera.pitch,-75.f);
     QCOMPARE(loaded.light.color,source.light.color);
     QCOMPARE(loaded.light.directional,.7f);
     QVERIFY(loaded.find(id));
@@ -196,6 +198,31 @@ void EditorTest::viewportWorkflow() {
         QCOMPARE(scene.camera.target,after);
     }
     QVERIFY(((scene.camera.position()-scene.camera.target)-(eyeBefore-targetBefore)).length()<.0001f);
+    const auto orbitTarget=scene.camera.target;
+    for(const auto arrow:{Qt::Key_Left,Qt::Key_Right,Qt::Key_Up,Qt::Key_Down}) {
+        const bool horizontal=arrow==Qt::Key_Left || arrow==Qt::Key_Right;
+        const bool positive=arrow==Qt::Key_Right || arrow==Qt::Key_Up;
+        auto angle=[&]{return horizontal?scene.camera.yaw:scene.camera.pitch;};
+        const auto before=angle();
+        QTest::keyPress(&view,arrow);
+        for(int sample=0;sample<3;++sample) {
+            const auto prior=angle();
+            QTRY_VERIFY(positive?angle()>prior:angle()<prior);
+        }
+        QTest::keyRelease(&view,arrow);
+        const auto after=angle();
+        QVERIFY(positive?after>before:after<before);
+        QTest::qWait(70);
+        QCOMPARE(angle(),after);
+        QCOMPARE(scene.camera.target,orbitTarget);
+    }
+    QTest::keyPress(&view,Qt::Key_W);
+    QTest::keyPress(&view,Qt::Key_Right);
+    const auto yawBeforePair=scene.camera.yaw;
+    QTRY_VERIFY(scene.camera.yaw!=yawBeforePair && scene.camera.target!=orbitTarget);
+    QTest::keyRelease(&view,Qt::Key_Right);
+    QTest::keyRelease(&view,Qt::Key_W);
+
 
     view.setMode(ViewMode::Walk);
     QTRY_COMPARE(QWidget::mouseGrabber(),&view);
@@ -203,6 +230,10 @@ void EditorTest::viewportWorkflow() {
         const auto before=scene.camera.eye;
         QTest::keyPress(&view,key);
         QTRY_VERIFY(scene.camera.eye!=before);
+        for(int sample=0;sample<2;++sample) {
+            const auto prior=scene.camera.eye;
+            QTRY_VERIFY(scene.camera.eye!=prior);
+        }
         QTest::keyRelease(&view,key);
         const auto after=scene.camera.eye;
         QTest::qWait(65);

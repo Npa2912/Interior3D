@@ -436,7 +436,7 @@ bool Scene::load(const QString &file, Scene &result, QString *error) {
     const int mode=viewing.value("mode").toInt(-1);
     if(mode<0||mode>2||!vectorValue(viewing.value("target"),camera.target,-100,100)||
        !vectorValue(viewing.value("eye"),camera.eye,-100,100)||
-       !scalar(viewing,"yaw",camera.yaw,-360,360)||!scalar(viewing,"pitch",camera.pitch,-20,82)||
+       !scalar(viewing,"yaw",camera.yaw,-360,360)||!scalar(viewing,"pitch",camera.pitch,-85,85)||
        !scalar(viewing,"distance",camera.distance,1,35)||!scalar(viewing,"walkYaw",camera.walkYaw,-360,360)||
        !scalar(viewing,"walkPitch",camera.walkPitch,-85,85)) return fail("Dữ liệu camera không hợp lệ.");
     if((viewing.contains("planDistance") && !scalar(viewing,"planDistance",camera.planDistance,1,35)) ||

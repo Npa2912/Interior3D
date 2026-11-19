@@ -24,6 +24,22 @@ constexpr float bevelRadius = .105f;
 const QVector3D axes[]{{1,0,0},{0,1,0},{0,0,1}};
 const QColor axisColors[]{QColor("#f45559"),QColor("#81db48"),QColor("#37a8ff")};
 
+const int navigationKeys[]{Qt::Key_W,Qt::Key_A,Qt::Key_S,Qt::Key_D,
+                           Qt::Key_Left,Qt::Key_Right,Qt::Key_Up,Qt::Key_Down};
+constexpr int movementKeyCount=4;
+constexpr int navigationKeyCount=8;
+constexpr auto shortcutModifiers=Qt::ControlModifier|Qt::AltModifier|Qt::MetaModifier;
+
+#ifdef Q_OS_WIN
+unsigned nativeNavigationKeys() {
+    const int virtualKeys[]{'W','A','S','D',VK_LEFT,VK_RIGHT,VK_UP,VK_DOWN};
+    unsigned pressed=0;
+    for(int i=0;i<navigationKeyCount;++i)
+        if(GetAsyncKeyState(virtualKeys[i]) & 0x8000) pressed|=1u<<i;
+    return pressed;
+}
+#endif
+
 int materialCode(const QString &material) {
     if(material=="Gỗ") return 1;
     if(material=="Kim loại") return 2;
@@ -212,9 +228,10 @@ Viewport::Viewport(Scene &model,QWidget *parent):QOpenGLWidget(parent),scene(mod
     connect(&animation,&QTimer::timeout,this,&Viewport::tick);
     connect(qGuiApp,&QGuiApplication::applicationStateChanged,this,[this](Qt::ApplicationState state){
         if(state!=Qt::ApplicationActive) {
-            keys.clear();
+            resetCameraInput();
             releaseCursor();
         } else {
+            resetCameraInput();
             captureCursor();
         }
     });
@@ -467,7 +484,7 @@ void Viewport::setMode(ViewMode mode) {
     if(mode==ViewMode::Walk && scene.camera.mode!=ViewMode::Walk)
         beforeWalk=scene.camera.mode;
     scene.camera.mode=mode;
-    keys.clear();
+    resetCameraInput();
     button=Qt::NoButton;
     setMouseTracking(mode==ViewMode::Walk);
     if(mode==ViewMode::Walk) {
@@ -516,7 +533,7 @@ void Viewport::releaseCursor(bool restorePosition) {
     if(!cursorCaptured) return;
     cursorCaptured=false;
     walkReticle->hide();
-    keys.clear();
+    resetCameraInput();
 #ifdef Q_OS_WIN
     if(nativeClip) {
         ClipCursor(nullptr);
@@ -532,11 +549,12 @@ bool Viewport::event(QEvent *event) {
     switch(event->type()) {
     case QEvent::WindowDeactivate:
     case QEvent::Hide:
-        keys.clear();
+        resetCameraInput();
         releaseCursor();
         break;
     case QEvent::WindowActivate:
     case QEvent::Show:
+        resetCameraInput();
         QTimer::singleShot(0,this,&Viewport::captureCursor);
         break;
     default:
@@ -602,7 +620,7 @@ void Viewport::mouseMoveEvent(QMouseEvent *event) {
     last=event->position();
     if(button==Qt::RightButton && camera.mode==ViewMode::Orbit) {
         camera.yaw=wrap(camera.yaw-float(delta.x())*.38f);
-        camera.pitch=std::clamp(camera.pitch+float(delta.y())*.38f,-20.f,82.f);
+        camera.pitch=std::clamp(camera.pitch+float(delta.y())*.38f,-85.f,85.f);
     } else if(button==Qt::MiddleButton || (button==Qt::RightButton && camera.mode==ViewMode::Plan)) {
         const auto inverse=camera.view().inverted();
         auto &target=camera.mode==ViewMode::Plan?camera.planTarget:camera.target;
@@ -697,13 +715,18 @@ void Viewport::keyPressEvent(QKeyEvent *event) {
         event->accept();
         return;
     }
-    const int key=event->key();
-    const bool movementKey=key==Qt::Key_W || key==Qt::Key_A || key==Qt::Key_S || key==Qt::Key_D;
-    const auto shortcutModifiers=Qt::ControlModifier|Qt::AltModifier|Qt::MetaModifier;
-    if(movementKey && (walkthrough ? cursorCaptured : scene.camera.mode==ViewMode::Orbit) &&
+    const bool orbit=scene.camera.mode==ViewMode::Orbit;
+    const auto *end=navigationKeys+(orbit?navigationKeyCount:movementKeyCount);
+    if((orbit || cursorCaptured) &&
+       std::find(navigationKeys,end,event->key())!=end &&
        !(event->modifiers() & shortcutModifiers)) {
-        if(!event->isAutoRepeat() && hasFocus() && window()->isActiveWindow())
-            keys.insert(key,event->nativeVirtualKey());
+        if(!event->isAutoRepeat() && hasFocus() && window()->isActiveWindow()) {
+#ifdef Q_OS_WIN
+            // Native keyboard state is sampled independently of Qt event delivery.
+            if(!event->nativeVirtualKey() && !event->nativeScanCode())
+#endif
+                keys.insert(event->key());
+        }
         event->accept();
         return;
     }
@@ -717,7 +740,7 @@ void Viewport::keyReleaseEvent(QKeyEvent *event) {
 }
 
 void Viewport::focusOutEvent(QFocusEvent *event) {
-    keys.clear();
+    resetCameraInput();
     releaseCursor();
     button=Qt::NoButton;
     if(dragging) {
@@ -729,20 +752,22 @@ void Viewport::focusOutEvent(QFocusEvent *event) {
 
 void Viewport::focusInEvent(QFocusEvent *event) {
     QOpenGLWidget::focusInEvent(event);
+    resetCameraInput();
     captureCursor();
 }
 
 void Viewport::tick() {
-    const float seconds=std::min(.05f,step.restart()/1000.f);
+    const float elapsed=step.nsecsElapsed()*1.e-9f;
+    step.restart();
     if(!isVisible()) return;
     if(cursorCaptured) refreshCursorClip();
     bool animationChanged=remoteState==RemoteState::Falling;
-    if(animationChanged) stepRemote(seconds);
+    if(animationChanged) stepRemote(std::min(.05f,elapsed));
     if(const auto *tv=std::as_const(scene).find(poweredTv);tv && tv->kind=="tv" &&
        scene.camera.mode!=ViewMode::Plan && uploadedCharacters<greetingText().size()) {
         animationChanged|=uploadedCharacters!=std::min(int(greetingText().size()),int(typing.elapsed()/135));
     }
-    animationChanged|=moveCamera(seconds);
+    animationChanged|=moveCamera(std::min(.10f,elapsed));
     if(meter.elapsed()>=1000) {
         emit statsChanged(qRound(frameCount*1000./meter.restart()));
         frameCount=0;
@@ -750,28 +775,43 @@ void Viewport::tick() {
     if(animationChanged) update();
 }
 
+void Viewport::resetCameraInput() {
+    keys.clear();
+#ifdef Q_OS_WIN
+    blockedNativeKeys=nativeNavigationKeys();
+#endif
+}
+
 bool Viewport::moveCamera(float seconds) {
+#ifndef Q_OS_WIN
     if(keys.isEmpty()) return false;
+#endif
     auto &camera=scene.camera;
     const bool walk=camera.mode==ViewMode::Walk;
     if(!hasFocus() || !window()->isActiveWindow() ||
-       (walk ? !cursorCaptured : camera.mode!=ViewMode::Orbit)) {
-        keys.clear();
-        return false;
-    }
+       (walk ? !cursorCaptured : camera.mode!=ViewMode::Orbit)) return false;
+
+    unsigned down=0;
 #ifdef Q_OS_WIN
-    // A lost Qt KeyRelease must not leave the camera moving. Check the Win32
-    // down bit only for keys already pressed in this viewport.
-    for(auto it=keys.begin();it!=keys.end();) {
-        if(it.value()!=0 && !(GetAsyncKeyState(int(it.value())) & 0x8000))
-            it=keys.erase(it);
-        else
-            ++it;
-    }
+    const unsigned physical=nativeNavigationKeys();
+    // Keys held while entering the viewport stay blocked until physically released.
+    // A missed or delayed Qt event cannot interrupt an already-held native key.
+    blockedNativeKeys&=physical;
+    down=physical & ~blockedNativeKeys;
 #endif
-    const int forward=int(keys.contains(Qt::Key_W))-int(keys.contains(Qt::Key_S));
-    const int sideways=int(keys.contains(Qt::Key_D))-int(keys.contains(Qt::Key_A));
-    if(forward==0 && sideways==0) return false;
+    if((down==0 && keys.isEmpty()) || (QGuiApplication::queryKeyboardModifiers() & shortcutModifiers)) return false;
+    const auto held=[&](int i){return int((down & (1u<<i)) || keys.contains(navigationKeys[i]));};
+    bool turned=false;
+    if(!walk) {
+        const float yaw=wrap(camera.yaw+(held(5)-held(4))*85.f*seconds);
+        const float pitch=std::clamp(camera.pitch+(held(6)-held(7))*65.f*seconds,-85.f,85.f);
+        turned=yaw!=camera.yaw || pitch!=camera.pitch;
+        camera.yaw=yaw;
+        camera.pitch=pitch;
+    }
+    const int forward=held(0)-held(2);
+    const int sideways=held(3)-held(1);
+    if(forward==0 && sideways==0) return turned;
 
     auto heading=walk?camera.forward():camera.target-camera.position();
     heading.setY(0);
@@ -784,7 +824,7 @@ bool Viewport::moveCamera(float seconds) {
     const float limitZ=walk ? scene.room.z()/2-.23f : 90.f;
     position.setX(std::clamp(position.x(),-limitX,limitX));
     position.setZ(std::clamp(position.z(),-limitZ,limitZ));
-    return position!=previous;
+    return turned || position!=previous;
 }
 
 const Object *Viewport::firstObject(const QString &kind) const {
