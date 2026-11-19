@@ -419,10 +419,10 @@ QPointF Viewport::project(QVector3D world) const {
 int Viewport::pick(QPointF pixel) const {
     const auto inverse=viewProjection().inverted();
     float x=float(2*pixel.x()/width()-1),y=float(1-2*pixel.y()/height());
-    const auto near=(inverse*QVector4D(x,y,-1,1)).toVector3DAffine();
-    const auto far=(inverse*QVector4D(x,y,1,1)).toVector3DAffine();
-    const auto direction=(far-near).normalized();
-    float closest=(far-near).length();
+    const auto rayStart=(inverse*QVector4D(x,y,-1,1)).toVector3DAffine();
+    const auto rayEnd=(inverse*QVector4D(x,y,1,1)).toVector3DAffine();
+    const auto direction=(rayEnd-rayStart).normalized();
+    float closest=(rayEnd-rayStart).length();
     int id=0;
     for(const auto &o:scene.objects) {
         if(!visible(o)) continue;
@@ -430,7 +430,7 @@ int Viewport::pick(QPointF pixel) const {
         for(const auto &part: partsFor(o)) {
             const auto local=(transform*part.matrix()).inverted();
             // Keeping the transformed direction unnormalized preserves world-ray distance.
-            if(intersectBox(local.map(near),local.mapVector(direction),closest,part.cylinder)) id=o.id;
+            if(intersectBox(local.map(rayStart),local.mapVector(direction),closest,part.cylinder)) id=o.id;
         }
     }
     if(remoteState!=RemoteState::Held && (remoteState!=RemoteState::OnTable || firstObject("table"))) {
@@ -438,7 +438,7 @@ int Viewport::pick(QPointF pixel) const {
         volume.scale(.104f,.046f,.24f);
         bool invertible=false;
         const auto local=volume.inverted(&invertible);
-        if(invertible && intersectBox(local.map(near),local.mapVector(direction),closest,false)) return remoteHit;
+        if(invertible && intersectBox(local.map(rayStart),local.mapVector(direction),closest,false)) return remoteHit;
     }
     return id;
 }
