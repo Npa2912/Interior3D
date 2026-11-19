@@ -1,0 +1,31 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Interior3D (GDB)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",
+      "cwd": "${workspaceFolder}",
+      "MIMode": "gdb",
+      "preLaunchTask": "CMake: build Interior3D",
+      "windows": { "miDebuggerPath": "gdb.exe" }
+    },
+    {
+      "name": "Interior3D (MSVC)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "CMake: build Interior3D"
+    },
+    {
+      "name": "Interior3D (LLDB)",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "CMake: build Interior3D"
+    }
+  ]
+}
