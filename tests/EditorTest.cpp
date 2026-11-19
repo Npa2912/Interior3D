@@ -27,6 +27,7 @@ class EditorTest final : public QObject {
 private slots:
     void sceneRoundTrip();
     void viewportWorkflow();
+    void verticalPlacement();
     void editorWorkflow();
     void projectActions();
     void remoteGreeting();
@@ -252,6 +253,38 @@ void EditorTest::viewportWorkflow() {
     QSignalSpy idleFrames(&view,&QOpenGLWidget::frameSwapped);
     QTest::qWait(220);
     QVERIFY(idleFrames.count()<=1);
+}
+
+void EditorTest::verticalPlacement() {
+    Scene scene;
+    const int table=scene.add("table",{0,0,0});
+    const int plant=scene.add("plant",{.85f,0,0});
+    const int tv=scene.add("tv",{-1.55f,0,0});
+    Viewport view(scene);
+    view.resize(720,520);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    view.setMode(ViewMode::Plan);
+    auto drag=[&](QPoint start,QPoint delta,Qt::KeyboardModifiers modifiers) {
+        QTest::mousePress(&view,Qt::LeftButton,modifiers,start);
+        const QPoint end=start+delta;
+        QMouseEvent move(QEvent::MouseMove,end,view.mapToGlobal(end),Qt::NoButton,Qt::LeftButton,modifiers);
+        QApplication::sendEvent(&view,&move);
+        QTest::mouseRelease(&view,Qt::LeftButton,modifiers,end);
+    };
+    const auto tvGrip=view.project({-1.55f,.51f,0}).toPoint();
+    QCOMPARE(view.pick(tvGrip),tv);
+    drag(tvGrip,{0,-65},Qt::ShiftModifier);
+    QVERIFY(scene.find(tv)->position.y()>.9f);
+    QCOMPARE(scene.find(tv)->position.x(),-1.55f);
+    QCOMPARE(scene.find(tv)->position.z(),0.f);
+
+    const auto plantGrip=view.project({.85f,.375f,0}).toPoint();
+    QCOMPARE(view.pick(plantGrip),plant);
+    drag(plantGrip,{-75,0},Qt::ControlModifier);
+    QVERIFY(scene.find(plant)->position.x()<.3f);
+    QVERIFY(std::abs(scene.find(plant)->position.y()-.4825f)<.001f);
+    QCOMPARE(scene.find(table)->position,QVector3D());
 }
 
 void EditorTest::editorWorkflow() {

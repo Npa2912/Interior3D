@@ -121,6 +121,7 @@ private:
     void holdRemote();
     void releaseRemote();
     void stepRemote(float seconds);
+    bool placeOnSupport(Object &object) const;
     QMatrix4x4 viewProjection() const;
     void draw(const QMatrix4x4 &model, QColor color, const QString &material, bool cylinder = false, bool rounded = false, bool leaf = false);
     void drawSelection(const Object &object);

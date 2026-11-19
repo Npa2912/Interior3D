@@ -683,7 +683,10 @@ void Viewport::mouseMoveEvent(QMouseEvent *event) {
             emit editStarted();
         }
         if(tool==EditTool::Move || tool==EditTool::Select) {
-            if(!dragAxis.isNull()) {
+            if(event->modifiers().testFlag(Qt::ShiftModifier)) {
+                const float distance=camera.mode==ViewMode::Plan?camera.planDistance:camera.distance;
+                o->position.setY(o->position.y()-float(delta.y())*distance*.0021f);
+            } else if(!dragAxis.isNull()) {
                 const auto origin=o->position+QVector3D(0,.35f,0);
                 const QPointF axis=project(origin+dragAxis)-project(origin);
                 const auto squared=QPointF::dotProduct(axis,axis);
@@ -720,9 +723,43 @@ void Viewport::mouseReleaseEvent(QMouseEvent *event) {
     if(event->button()!=button) return;
     button=Qt::NoButton;
     if(dragging) {
+        if(event->modifiers().testFlag(Qt::ControlModifier) &&
+           (tool==EditTool::Move || tool==EditTool::Select)) {
+            if(auto *object=scene.find(selected);object && !object->locked && placeOnSupport(*object))
+                emit objectChanged();
+        }
         dragging=false;
         emit editFinished();
     }
+}
+
+bool Viewport::placeOnSupport(Object &object) const {
+    const QVector3D start(object.position.x(),256.f,object.position.z());
+    const QVector3D down(0,-1,0);
+    float distance=std::numeric_limits<float>::infinity();
+    for(const auto &support:std::as_const(scene.objects)) {
+        if(support.id==object.id || isArchitecture(support) || support.kind=="tv") continue;
+        const auto transform=support.matrix();
+        for(const auto &part:partsFor(support)) {
+            // Ignore decorative parts such as flowers and objects on the tabletop.
+            if(!part.tint || part.leaf) continue;
+            bool invertible=false;
+            const auto local=(transform*part.matrix()).inverted(&invertible);
+            if(invertible) intersectBox(local.map(start),local.mapVector(down),distance,part.cylinder);
+        }
+    }
+    if(!std::isfinite(distance)) return false;
+
+    const auto transform=object.matrix();
+    float bottom=std::numeric_limits<float>::infinity();
+    for(const auto &part:partsFor(object)) {
+        const auto matrix=transform*part.matrix();
+        for(float x:{-.5f,.5f}) for(float y:{-.5f,.5f}) for(float z:{-.5f,.5f})
+            bottom=std::min(bottom,matrix.map(QVector3D(x,y,z)).y());
+    }
+    const float height=object.position.y()+start.y()-distance-bottom;
+    object.position.setY(std::clamp(height,-100.f,100.f));
+    return true;
 }
 
 void Viewport::wheelEvent(QWheelEvent *event) {
