@@ -62,6 +62,7 @@ QMatrix4x4 Part::matrix() const {
     m.translate(center);
     m.rotate(yaw, 0, 1, 0);
     m.rotate(roll, 0, 0, 1);
+    m.rotate(orientation);
     m.scale(size);
     return m;
 }
@@ -302,11 +303,51 @@ QVector<Part> geometry(const Object &o, const QVector3D &room) {
     } else if(type=="plant") {
         box({0,.18f,0},{.37f,.36f,.37f},QColor("#dfd5ca"),{},false,0,true);
         box({0,.37f,0},{.31f,.025f,.31f},QColor("#62503d"),{},false,0,true);
-        box({0,.65f,0},{.035f,.59f,.035f},QColor("#626438"),{},false);
-        for(int i=0;i<12;++i) {
-            float a=i*2.39f, r=.22f+(i%3)*.06f;
-            box({r*std::cos(a),.63f+i*.047f,r*std::sin(a)},{.44f,.061f,.15f},
-                o.color.lighter(88+i%4*11),{},true,-qRadiansToDegrees(a),true,24.f);
+        auto stem=[&](QVector3D start,QVector3D end,float diameter,QColor color) {
+            const auto direction=end-start;
+            box((start+end)*.5f,{diameter,direction.length()+diameter*.25f,diameter},color,{},false,0,true);
+            parts.last().orientation=QQuaternion::rotationTo({0,1,0},direction);
+        };
+        auto leaf=[&](QVector3D start,QVector3D direction,float length,float width,int shade,float tilt) {
+            direction.normalize();
+            box(start+direction*length*.5f,{length,length*.60f,width},o.color.lighter(shade),"Lá");
+            auto &part=parts.last();
+            part.orientation=QQuaternion::rotationTo({1,0,0},direction)*
+                             QQuaternion::fromAxisAndAngle(1,0,0,tilt);
+            part.leaf=true;
+        };
+        const QVector3D trunkBase(0,.375f,0),fork(.027f,.82f,-.025f),tip(-.045f,1.38f,.033f);
+        stem(trunkBase,fork,.036f,QColor("#6e5538"));
+        stem(fork,tip,.023f,QColor("#786041"));
+
+        // Alternate branches around the trunk, with short paired leaf stalks.
+        for(int branch=0;branch<9;++branch) {
+            const float angle=branch*2.39996f;
+            const auto radial=QVector3D(std::cos(angle),0,std::sin(angle));
+            const auto side=QVector3D(-std::sin(angle),0,std::cos(angle));
+            const float h=.56f+branch*.088f;
+            auto base=h<fork.y()?trunkBase+(fork-trunkBase)*((h-trunkBase.y())/(fork.y()-trunkBase.y()))
+                                :fork+(tip-fork)*((h-fork.y())/(tip.y()-fork.y()));
+            const float reach=.39f+.045f*(branch%3)-.019f*branch;
+            const QVector3D bend=base+radial*reach*.53f+QVector3D(0,.095f,0);
+            const QVector3D end=base+radial*reach+QVector3D(0,.125f+.014f*(branch%3),0);
+            stem(base,bend,.013f,QColor("#897052"));
+            stem(bend,end,.008f,QColor("#838055"));
+            for(int pair=0;pair<3;++pair) for(int sign:{-1,1}) {
+                const float t=.36f+.24f*pair+sign*.025f;
+                const auto node=t<.53f?base+(bend-base)*(t/.53f):bend+(end-bend)*((t-.53f)/.47f);
+                const auto attachment=node+side*(sign*.024f)+radial*.012f+QVector3D(0,.014f,0);
+                stem(node,attachment,.004f,QColor("#648743"));
+                const int variation=(branch*13+pair*7+sign+20)%19;
+                leaf(attachment,radial*.64f+side*(sign*1.03f)+QVector3D(0,.22f+.11f*(variation%4),0),
+                     .155f+.004f*variation-.013f*pair,.067f+.002f*variation,
+                     77+variation*3,sign*(16.f+variation*1.7f));
+            }
+            leaf(end,radial+QVector3D(0,.44f,0),.15f,.067f,113+branch%4*6,branch%2?23.f:-27.f);
+        }
+        for(int i=0;i<4;++i) {
+            const float angle=i*1.57f+.28f;
+            leaf(tip,{std::cos(angle),.8f,std::sin(angle)},.13f,.065f,117+i*4,i%2?27.f:-19.f);
         }
     } else if(type=="lamp") {
         box({0,.035f,0},{.38f,.07f,.38f},QColor("#726044"),"Kim loại",false,0,true);

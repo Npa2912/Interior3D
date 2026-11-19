@@ -20,6 +20,7 @@ namespace {
 constexpr float tau = 6.283185307f;
 constexpr int cubeCount = 36;
 constexpr int cylinderCount = 24 * 12;
+constexpr int roundedCount = 6 * 5 * 5 * 6;
 constexpr float bevelRadius = .105f;
 const QVector3D axes[]{{1,0,0},{0,1,0},{0,0,1}};
 const QColor axisColors[]{QColor("#f45559"),QColor("#81db48"),QColor("#37a8ff")};
@@ -47,6 +48,7 @@ int materialCode(const QString &material) {
     if(material=="Kính") return 4;
     if(material=="Phát sáng") return 5;
     if(material=="Bầu trời") return 6;
+    if(material=="Lá") return 9;
     return 0;
 }
 
@@ -92,6 +94,24 @@ QVector<float> vertices() {
             rounded(stops[i],stops[j+1]);
         }
     }
+    // A curved blade with a raised midrib and tapered edges, shared by all leaves.
+    auto blade=[](float t,float side) {
+        const float width=.48f*std::pow(std::max(0.f,std::sin(t*3.14159265f)),.83f)*(1.12f-.29f*t);
+        const float arch=.24f*std::sin(t*3.14159265f)-.27f*t*t;
+        return QVector3D(t-.5f,arch-width*.38f*std::abs(side),width*side);
+    };
+    auto leafVertex=[&](float t,float side) {
+        const auto along=blade(std::min(1.f,t+.006f),side)-blade(std::max(0.f,t-.006f),side);
+        const auto across=blade(std::clamp(t,.01f,.99f),side+.015f)-
+                          blade(std::clamp(t,.01f,.99f),side-.015f);
+        vertex(blade(t,side),QVector3D::crossProduct(across,along).normalized());
+    };
+    for(int i=0;i<10;++i) for(int rib=0;rib<4;++rib) {
+        const float t=i/10.f,next=(i+1)/10.f;
+        const float side=rib*.5f-1.f,other=side+.5f;
+        leafVertex(t,side); leafVertex(t,other); leafVertex(next,other);
+        leafVertex(t,side); leafVertex(next,other); leafVertex(next,side);
+    }
     return buffer;
 }
 
@@ -136,6 +156,7 @@ void main() {
         return;
     }
     vec3 n=normalize(surface);
+    if(material==9 && !gl_FrontFacing) n=-n;
     vec3 lightVector=vec3(-.55,2.73,-.42)-world;
     float distanceSquared=dot(lightVector,lightVector);
     vec3 light=normalize(lightVector);
@@ -157,6 +178,13 @@ void main() {
     float bounce=.79+.21*smoothstep(0.,1.9,world.y);
     vec3 ambiance=mix(vec3(1),lightColor,.35)*intensity.x*bounce;
     ambiance+=intensity.x*vec3(.22,.17,.12)*smoothstep(.35,2.7,world.y);
+    if(material==9) {
+        float midrib=1.-smoothstep(.018,.043,abs(local.z));
+        float pattern=abs(fract((local.x-abs(local.z)*.68)*8.)-.5);
+        float veins=(1.-smoothstep(.023,.085,pattern))*smoothstep(.025,.09,abs(local.z));
+        base*=.90+.20*midrib+.12*veins+.13*(local.x+.5);
+        ambiance+=vec3(.07,.10,.04);
+    }
     vec3 lit=base*(ambiance + lightColor*(sun*intensity.y+point*intensity.z));
     lit+=base*vec3(.65,.82,1)*intensity.y*(.25*overhead+.16*facingWindow+.12);
     if(material==6) {
@@ -286,7 +314,7 @@ void Viewport::initializeGL() {
     colorUniform=shader->uniformLocation("color");
     materialUniform=shader->uniformLocation("material");
     const auto data=vertices();
-    roundedCount=data.size()/6-cubeCount-cylinderCount;
+    leafCount=data.size()/6-cubeCount-cylinderCount-roundedCount;
     vao.create();
     QOpenGLVertexArrayObject::Binder binder(&vao);
     vbo.create();
@@ -317,12 +345,13 @@ bool Viewport::visible(const Object &o) const {
     return scene.camera.mode!=ViewMode::Plan || (o.kind!="ceiling" && o.kind!="pendant");
 }
 
-void Viewport::draw(const QMatrix4x4 &model,QColor color,const QString &material,bool cylinder,bool rounded) {
+void Viewport::draw(const QMatrix4x4 &model,QColor color,const QString &material,bool cylinder,bool rounded,bool leaf) {
     shader->setUniformValue(modelUniform,model);
     shader->setUniformValue(normalUniform,model.normalMatrix());
     shader->setUniformValue(colorUniform,QVector3D(color.redF(),color.greenF(),color.blueF()));
     shader->setUniformValue(materialUniform,materialCode(material));
-    if(cylinder) glDrawArrays(GL_TRIANGLES,cubeCount,cylinderCount);
+    if(leaf) glDrawArrays(GL_TRIANGLES,cubeCount+cylinderCount+roundedCount,leafCount);
+    else if(cylinder) glDrawArrays(GL_TRIANGLES,cubeCount,cylinderCount);
     else if(rounded) glDrawArrays(GL_TRIANGLES,cubeCount+cylinderCount,roundedCount);
     else glDrawArrays(GL_TRIANGLES,0,cubeCount);
 }
@@ -415,7 +444,7 @@ void Viewport::paintGL() {
             }
             const QString material=part.tint && o.material!="Mặc định" ? o.material : part.material;
             const bool rounded=part.material=="Vải" && (o.kind=="sofa" || o.kind=="chair" || o.kind=="bed");
-            draw(transform*part.matrix(),part.color,material,part.cylinder,rounded);
+            draw(transform*part.matrix(),part.color,material,part.cylinder,rounded,part.leaf);
         }
         if(o.kind=="art") drawWallPhotos(transform);
     }
@@ -483,6 +512,8 @@ int Viewport::pick(QPointF pixel) const {
 void Viewport::select(int id) {
     if(id && !scene.find(id)) id=0;
     if(selected==id) return;
+    finishKeyboardRotation();
+    keyboardRotationTarget=0;
     selected=id;
     emit selectionChanged(id);
     update();
@@ -590,6 +621,8 @@ void Viewport::mousePressEvent(QMouseEvent *event) {
     initial=scene.camera.mode==ViewMode::Walk && cursorCaptured?QPointF(rect().center()):event->position();
     last=initial;
     dragAxis={};
+    finishKeyboardRotation();
+    if(button==Qt::RightButton && scene.camera.mode==ViewMode::Orbit) select(0);
     if(button!=Qt::LeftButton) return;
     const int hit=pick(initial);
     if(hit==remoteHit) {
@@ -608,6 +641,10 @@ void Viewport::mousePressEvent(QMouseEvent *event) {
         if(!dragAxis.isNull()) return;
     }
     select(hit);
+    if(scene.camera.mode==ViewMode::Orbit) {
+        const auto *object=std::as_const(scene).find(hit);
+        keyboardRotationTarget=object && !isArchitecture(*object)?hit:0;
+    }
 }
 
 void Viewport::mouseMoveEvent(QMouseEvent *event) {
@@ -732,6 +769,14 @@ void Viewport::keyPressEvent(QKeyEvent *event) {
        std::find(navigationKeys,end,event->key())!=end &&
        !(event->modifiers() & shortcutModifiers)) {
         if(!event->isAutoRepeat() && hasFocus() && window()->isActiveWindow()) {
+            const int key=event->key();
+            if(orbit && !keyboardRotationTarget && key>=Qt::Key_Left && key<=Qt::Key_Down) {
+                auto &camera=scene.camera;
+                camera.yaw=wrap(camera.yaw+(int(key==Qt::Key_Right)-int(key==Qt::Key_Left))*.75f);
+                camera.pitch=std::clamp(camera.pitch+(int(key==Qt::Key_Up)-int(key==Qt::Key_Down))*.60f,-85.f,85.f);
+                cameraArrowTap.start();
+                update();
+            }
 #ifdef Q_OS_WIN
             // Native keyboard state is sampled independently of Qt event delivery.
             if(!event->nativeVirtualKey() && !event->nativeScanCode())
@@ -786,7 +831,15 @@ void Viewport::tick() {
     if(animationChanged) update();
 }
 
+void Viewport::finishKeyboardRotation() {
+    if(!rotatingObjectWithKeys) return;
+    rotatingObjectWithKeys=false;
+    emit editFinished();
+}
+
 void Viewport::resetCameraInput() {
+    finishKeyboardRotation();
+    cameraArrowTap.invalidate();
     keys.clear();
 #ifdef Q_OS_WIN
     blockedNativeKeys=nativeNavigationKeys();
@@ -795,7 +848,7 @@ void Viewport::resetCameraInput() {
 
 bool Viewport::moveCamera(float seconds) {
 #ifndef Q_OS_WIN
-    if(keys.isEmpty()) return false;
+    if(keys.isEmpty()) { finishKeyboardRotation(); return false; }
 #endif
     auto &camera=scene.camera;
     const bool walk=camera.mode==ViewMode::Walk;
@@ -810,15 +863,34 @@ bool Viewport::moveCamera(float seconds) {
     blockedNativeKeys&=physical;
     down=physical & ~blockedNativeKeys;
 #endif
-    if((down==0 && keys.isEmpty()) || (QGuiApplication::queryKeyboardModifiers() & shortcutModifiers)) return false;
+    if((down==0 && keys.isEmpty()) || (QGuiApplication::queryKeyboardModifiers() & shortcutModifiers)) {
+        finishKeyboardRotation();
+        return false;
+    }
     const auto held=[&](int i){return int((down & (1u<<i)) || keys.contains(navigationKeys[i]));};
+    const auto horizontal=held(5)-held(4), vertical=held(6)-held(7);
     bool turned=false;
     if(!walk) {
-        const float yaw=wrap(camera.yaw+(held(5)-held(4))*85.f*seconds);
-        const float pitch=std::clamp(camera.pitch+(held(6)-held(7))*65.f*seconds,-85.f,85.f);
-        turned=yaw!=camera.yaw || pitch!=camera.pitch;
-        camera.yaw=yaw;
-        camera.pitch=pitch;
+        auto *object=keyboardRotationTarget==selected && selected?scene.find(selected):nullptr;
+        if(object && !object->locked && !dragging && (horizontal || vertical)) {
+            if(!rotatingObjectWithKeys) {
+                rotatingObjectWithKeys=true;
+                emit editStarted();
+            }
+            object->rotation.setY(wrap(object->rotation.y()+horizontal*90.f*seconds));
+            object->rotation.setX(wrap(object->rotation.x()+vertical*90.f*seconds));
+            emit objectChanged();
+            turned=true;
+        } else {
+            finishKeyboardRotation();
+            if(!object && (!cameraArrowTap.isValid() || cameraArrowTap.elapsed()>=180)) {
+                const float yaw=wrap(camera.yaw+horizontal*85.f*seconds);
+                const float pitch=std::clamp(camera.pitch+vertical*65.f*seconds,-85.f,85.f);
+                turned=yaw!=camera.yaw || pitch!=camera.pitch;
+                camera.yaw=yaw;
+                camera.pitch=pitch;
+            }
+        }
     }
     const int forward=held(0)-held(2);
     const int sideways=held(3)-held(1);

@@ -2,6 +2,7 @@
 
 #include <QColor>
 #include <QMatrix4x4>
+#include <QQuaternion>
 #include <QString>
 #include <QVector>
 #include <QVector3D>
@@ -47,6 +48,8 @@ struct Part {
     float yaw = 0;
     bool cylinder = false;
     float roll = 0;
+    QQuaternion orientation;
+    bool leaf = false;
     QMatrix4x4 matrix() const;
 };
 

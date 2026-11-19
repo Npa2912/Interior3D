@@ -75,16 +75,19 @@ private:
     static constexpr int remoteHit = -1;
     QOpenGLVertexArrayObject vao;
     QOpenGLBuffer vbo;
-    QElapsedTimer meter, step;
+    QElapsedTimer meter, step, cameraArrowTap;
     QTimer animation;
     QSet<int> keys;
 #ifdef Q_OS_WIN
     unsigned blockedNativeKeys = 0;
 #endif
     QString error;
-    int selected = 0, frameCount = 0, roundedCount = 0;
+    int selected = 0, frameCount = 0, leafCount = 0;
     bool grid = false, uniformScale = false, dragging = false, cursorCaptured = false;
     bool nativeClip = false;
+    bool rotatingObjectWithKeys = false;
+    int keyboardRotationTarget = 0;
+    void finishKeyboardRotation();
     ViewMode beforeWalk = ViewMode::Orbit;
     QPoint previousCursor;
     QRect clippedRect;
@@ -119,7 +122,7 @@ private:
     void releaseRemote();
     void stepRemote(float seconds);
     QMatrix4x4 viewProjection() const;
-    void draw(const QMatrix4x4 &model, QColor color, const QString &material, bool cylinder = false, bool rounded = false);
+    void draw(const QMatrix4x4 &model, QColor color, const QString &material, bool cylinder = false, bool rounded = false, bool leaf = false);
     void drawSelection(const Object &object);
     bool visible(const Object &object) const;
 };

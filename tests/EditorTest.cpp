@@ -310,7 +310,10 @@ void EditorTest::editorWorkflow() {
     QTest::keyClick(rotation,Qt::Key_A,Qt::ControlModifier);
     QTest::keyClicks(rotation,"42");
     QTest::keyClick(rotation,Qt::Key_Return);
-    scale->setValue(1.70);
+    scale->setFocus();
+    QTest::keyClick(scale,Qt::Key_A,Qt::ControlModifier);
+    QTest::keyClicks(scale,"1.70");
+    QTest::keyClick(scale,Qt::Key_Return);
     QCOMPARE(editor.model().find(id)->rotation.y(),42.f);
     QCOMPARE(editor.model().find(id)->scale.z(),1.7f);
     // The model is draggable immediately after insertion, with the default Select tool.
@@ -343,6 +346,29 @@ void EditorTest::editorWorkflow() {
     QVERIFY(editor.model().find(id)->rotation.y()!=42.f);
     QTest::mouseClick(undo,Qt::LeftButton);
     QCOMPARE(editor.model().find(id)->rotation.y(),42.f);
+    editor.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&editor));
+    const auto unchangedCamera=editor.model().camera;
+    for(const auto arrow:{Qt::Key_Right,Qt::Key_Up}) {
+        QTest::mouseClick(view,Qt::LeftButton,Qt::NoModifier,grip);
+        QCOMPARE(view->selection(),id);
+        const auto before=editor.model().find(id)->rotation;
+        QTest::keyPress(view,arrow);
+        QTRY_VERIFY(editor.model().find(id)->rotation!=before);
+        QTest::keyRelease(view,arrow);
+        QTest::qWait(70);
+        QVERIFY(editor.model().camera==unchangedCamera);
+        QTest::mouseClick(undo,Qt::LeftButton);
+        QCOMPARE(editor.model().find(id)->rotation,before);
+    }
+    QTest::mouseClick(view,Qt::RightButton,Qt::NoModifier,grip);
+    QCOMPARE(view->selection(),0);
+    QTest::keyClick(view,Qt::Key_Right);
+    QVERIFY(std::abs(editor.model().camera.yaw-unchangedCamera.yaw-.75f)<.001f);
+    QTest::keyClick(view,Qt::Key_Left);
+    QTest::mouseClick(view,Qt::LeftButton,Qt::NoModifier,grip);
+    QCOMPARE(view->selection(),id);
+
     const auto plain=editor.view()->grabFramebuffer();
     material->setCurrentText("Gỗ");
     QCOMPARE(editor.model().find(id)->material,QString("Gỗ"));

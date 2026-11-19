@@ -33,9 +33,9 @@ Với generator nhiều cấu hình, thêm `--config Debug` khi build và `-C De
 | Thao tác | Điều khiển |
 |---|---|
 | Chọn | Nhấn trái lên đối tượng hoặc chọn trong danh sách **Bố trí nội thất** |
-| Camera 3D | Dùng WASD để dịch chuyển góc nhìn theo mặt sàn, bốn phím mũi tên hoặc kéo chuột phải để xoay, kéo chuột giữa để pan, lăn chuột để zoom. Nhấp vào vùng 3D nếu con trỏ đang ở ô nhập liệu |
+| Camera 3D | Dùng WASD để dịch chuyển góc nhìn theo mặt sàn, bốn phím mũi tên khi bỏ chọn vật hoặc kéo chuột phải để xoay, kéo chuột giữa để pan, lăn chuột để zoom. Nhấp vào vùng 3D nếu con trỏ đang ở ô nhập liệu |
 | Di chuyển | Kéo vật trên mặt sàn bằng công cụ **Chọn** hoặc **Di chuyển**. Trong **Di chuyển**, có thể kéo tay nắm đỏ, xanh lá, xanh dương theo X, Y, Z |
-| Xoay và tỷ lệ | Kéo đối tượng với công cụ tương ứng hoặc nhập trực tiếp ba trục trong bảng thuộc tính |
+| Xoay và tỷ lệ | Trong Xem 3D, nhấp vật rồi giữ ←/→ để xoay quanh trục Y, ↑/↓ để xoay quanh trục X. Nhấp phải để bỏ chọn. Có thể nhập vị trí, góc xoay và tỷ lệ XYZ trong bảng thuộc tính rồi nhấn Enter |
 | Thêm đồ | Nhấn một mục trong thư viện. Có thể lọc danh mục hoặc tìm theo tên |
 | Cảnh nhìn từ trên | Nhấn **Xem 2D (Mặt bằng)**, kéo chuột phải để pan |
 | Tham quan | Nhấn **Tham quan (FPS)** để khóa chuột vào vùng 3D. WASD để đi, di chuột để nhìn, **T** để thoát và trả lại con trỏ |

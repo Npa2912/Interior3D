@@ -217,6 +217,7 @@ QPixmap thumbnail(const CatalogItem &entry) {
 
 QDoubleSpinBox *number(double min,double max,double step) {
     auto *field=new QDoubleSpinBox;
+    field->setFocusPolicy(Qt::StrongFocus);
     field->setRange(min,max);
     field->setSingleStep(step);
     field->setDecimals(2);
@@ -671,6 +672,7 @@ QTabWidget::pane { border:0; background:#d9dde5; border-radius:12px; }
 QTabBar::tab { padding:10px 11px; background:#444a54; color:#f7f9fc; border-top-left-radius:10px; border-top-right-radius:10px; }
 QTabBar::tab:selected { background:#087cf0; color:white; }
 QLineEdit, QDoubleSpinBox, QWidget#paper QComboBox { min-height:23px; padding:1px 4px; color:#161d29; background:#edf0f5; border:1px solid #bdc4d0; border-radius:6px; }
+QDoubleSpinBox QLineEdit { min-height:0px; border:0; border-radius:0; padding:0; color:#161d29; background:transparent; }
 QLineEdit#catalogSearch { background:#c7ccd6; padding:4px 7px; }
 QListWidget#catalog { background:transparent; border:0; color:#19202a; font-size:10px; }
 QListWidget#catalog::item { border:1px solid transparent; border-radius:8px; }
@@ -993,7 +995,7 @@ void Editor::showHelp() {
     QMessageBox::information(this,"Interior3D",
         "Chọn một món trong thư viện để thêm vào cảnh. Nhấn trái để chọn đối tượng.\n\n"
         "Kéo chuột phải để xoay camera. Kéo chuột giữa để pan. Lăn chuột để zoom.\n"
-        "Dùng Di chuyển, Xoay hoặc Tỷ lệ rồi kéo đối tượng. Các ô XYZ cho phép chỉnh chính xác.\n"
+        "Trong Xem 3D, chọn vật rồi dùng phím mũi tên để xoay, kéo chuột trái để đặt. Nhấp phải để bỏ chọn. Nhập XYZ rồi nhấn Enter để chỉnh chính xác.\n"
         "Trong chế độ tham quan, WASD di chuyển, di chuột để nhìn và nhấn T để thoát.\n\n"
         "Ctrl+N tạo mới · Ctrl+O mở · Ctrl+S lưu · Ctrl+D sao chép · Delete xóa · Ctrl+E xuất ảnh · F11 toàn màn hình.");
 }
