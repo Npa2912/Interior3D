@@ -47,7 +47,7 @@ Với generator nhiều cấu hình, thêm `--config Debug` khi build và `-C De
 
 ### Remote TV
 
-Trong phòng khách mặc định, nhấp vào remote trên bàn trà để cầm lên và hướng camera về TV. Nhấn **M** để bật hoặc tắt TV. Khi bật, TV hiện bó hoa và lần lượt hiện từng ký tự của lời chúc **“Chúc thầy Hiển 20/11 vui vẻ”**. Nhấn **X** để thả remote, sau đó có thể nhấp vào remote để nhặt lại.
+Trong phòng khách mặc định, nhấp vào remote trên bàn trà để cầm lên và hướng camera về TV. Nhấn **M** để bật hoặc tắt TV. Khi bật, TV hiện bó hoa và lần lượt hiện từng ký tự của lời chúc **“Chúc thầy Hiển 20/11 vui vẻ”**. Trong chế độ tham quan, nhấn **X** để nhặt remote từ bàn hoặc nhặt lại sau khi thả. Nếu đang cầm remote, nhấn **X** để thả. Không cần hướng tâm ngắm vào remote khi dùng phím **X**.
 
 ## Mã nguồn
 

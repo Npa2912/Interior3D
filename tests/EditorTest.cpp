@@ -463,6 +463,20 @@ void EditorTest::remoteGreeting() {
     QVERIFY(capture("05-remote-da-rot.png"));
     QTest::mouseClick(view,Qt::LeftButton,Qt::NoModifier,remoteOnFloor);
     QCOMPARE(editor.model().camera.mode,ViewMode::Walk);
+
+    // Grab the remote from the table using only the keyboard while looking at the TV.
+    view->resetRemote();
+    QTest::keyClick(view,Qt::Key_X);
+    QTest::keyClick(view,Qt::Key_M);
+    QVERIFY(view->grabFramebuffer().pixelColor(screen)!=off.pixelColor(screen));
+    QTest::keyClick(view,Qt::Key_X);
+    QKeyEvent repeatedX(QEvent::KeyPress,Qt::Key_X,Qt::NoModifier,QString(),true);
+    QApplication::sendEvent(view,&repeatedX);
+    QTest::keyClick(view,Qt::Key_M);
+    QVERIFY(view->grabFramebuffer().pixelColor(screen)!=off.pixelColor(screen));
+    QTest::keyClick(view,Qt::Key_X);
+    QTest::keyClick(view,Qt::Key_M);
+    QCOMPARE(view->grabFramebuffer().pixelColor(screen),off.pixelColor(screen));
 }
 
 int main(int argc,char **argv) {

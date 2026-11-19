@@ -658,10 +658,18 @@ void Viewport::wheelEvent(QWheelEvent *event) {
 }
 
 void Viewport::keyPressEvent(QKeyEvent *event) {
-    if(remoteState==RemoteState::Held && (event->key()==Qt::Key_M || event->key()==Qt::Key_X)) {
+    const bool walkthrough=scene.camera.mode==ViewMode::Walk;
+    if(event->key()==Qt::Key_X && (remoteState==RemoteState::Held || walkthrough)) {
+        if(!event->isAutoRepeat() && (!walkthrough || cursorCaptured)) {
+            if(remoteState==RemoteState::Held) releaseRemote();
+            else if(remoteState!=RemoteState::OnTable || firstObject("table")) holdRemote();
+        }
+        event->accept();
+        return;
+    }
+    if(event->key()==Qt::Key_M && remoteState==RemoteState::Held) {
         if(!event->isAutoRepeat()) {
-            if(event->key()==Qt::Key_X) releaseRemote();
-            else if(const auto *tv=firstObject("tv")) {
+            if(const auto *tv=firstObject("tv")) {
                 if(poweredTv==tv->id) poweredTv=0;
                 else {
                     poweredTv=tv->id;
@@ -837,15 +845,11 @@ void Viewport::updateRemoteHint() {
         if(scene.camera.mode!=ViewMode::Plan) text="M  Bật/tắt TV     X  Thả remote";
         if(scene.camera.mode==ViewMode::Walk) text+="     T  Thoát tham quan";
     } else if(remoteState==RemoteState::Falling) {
-        text="Đang thả remote…";
+        text=scene.camera.mode==ViewMode::Walk?"X  Nhặt lại remote     T  Thoát tham quan":"Đang thả remote…";
     } else if(scene.camera.mode==ViewMode::Walk) {
-        text="W A S D  Di chuyển     T  Thoát tham quan";
-        if(remoteState!=RemoteState::OnTable || firstObject("table")) {
-            const auto center=remoteTransform().map(QVector3D());
-            const auto clip=viewProjection()*QVector4D(center,1);
-            if(clip.w()>0 && (project(center).toPoint()-rect().center()).manhattanLength()<45 &&
-               pick(rect().center())==remoteHit) text="Nhấp để nhặt remote     T  Thoát tham quan";
-        }
+        text="W A S D  Di chuyển";
+        if(remoteState!=RemoteState::OnTable || firstObject("table")) text+="     X  Nhặt remote";
+        text+="     T  Thoát tham quan";
     } else if(remoteState!=RemoteState::OnTable || firstObject("table")) {
         const auto center=remoteTransform().map(QVector3D());
         const auto clip=viewProjection()*QVector4D(center,1);
