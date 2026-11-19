@@ -9,7 +9,6 @@
 #include <QOpenGLTexture>
 #include <QOpenGLVertexArrayObject>
 #include <QOpenGLWidget>
-#include <QSet>
 #include <QTimer>
 #include <memory>
 
@@ -69,7 +68,7 @@ private:
     QOpenGLBuffer vbo;
     QElapsedTimer meter, step;
     QTimer animation;
-    QSet<int> keys;
+    QHash<int,quint32> keys;
     QString error;
     int selected = 0, frameCount = 0, roundedCount = 0;
     bool grid = false, uniformScale = false, dragging = false, cursorCaptured = false;
@@ -96,6 +95,7 @@ private:
 
     void cleanup();
     void tick();
+    bool moveCamera(float seconds);
     const Object *firstObject(const QString &kind) const;
     QMatrix4x4 remoteTransform() const;
     void drawRemote(const QMatrix4x4 &transform, bool held);

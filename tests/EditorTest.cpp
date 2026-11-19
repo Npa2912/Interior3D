@@ -175,6 +175,48 @@ void EditorTest::viewportWorkflow() {
     QTest::keyClick(&view,Qt::Key_T);
     QCOMPARE(scene.camera.mode,ViewMode::Plan);
     QVERIFY(QWidget::mouseGrabber()!=&view);
+    view.setMode(ViewMode::Orbit);
+    QTRY_VERIFY(view.hasFocus());
+    const auto targetBefore=scene.camera.target;
+    const auto eyeBefore=scene.camera.position();
+    const auto orbitHeading=(targetBefore-eyeBefore)*QVector3D(1,0,1);
+    const auto orbitRight=QVector3D::crossProduct(orbitHeading,{0,1,0});
+    for(const auto key:{Qt::Key_W,Qt::Key_A,Qt::Key_S,Qt::Key_D}) {
+        const auto before=scene.camera.target;
+        QTest::keyPress(&view,key);
+        QTRY_VERIFY(scene.camera.target!=before);
+        QTest::keyRelease(&view,key);
+        const auto after=scene.camera.target;
+        const auto delta=after-before;
+        const auto expected=key==Qt::Key_W?orbitHeading:key==Qt::Key_S?-orbitHeading:
+                            key==Qt::Key_D?orbitRight:-orbitRight;
+        QVERIFY(QVector3D::dotProduct(delta,expected)>0);
+        QCOMPARE(delta.y(),0.f);
+        QTest::qWait(65);
+        QCOMPARE(scene.camera.target,after);
+    }
+    QVERIFY(((scene.camera.position()-scene.camera.target)-(eyeBefore-targetBefore)).length()<.0001f);
+
+    view.setMode(ViewMode::Walk);
+    QTRY_COMPARE(QWidget::mouseGrabber(),&view);
+    for(const auto key:{Qt::Key_A,Qt::Key_S,Qt::Key_D}) {
+        const auto before=scene.camera.eye;
+        QTest::keyPress(&view,key);
+        QTRY_VERIFY(scene.camera.eye!=before);
+        QTest::keyRelease(&view,key);
+        const auto after=scene.camera.eye;
+        QTest::qWait(65);
+        QCOMPARE(scene.camera.eye,after);
+    }
+#ifdef Q_OS_WIN
+    const auto beforeLostRelease=scene.camera.eye;
+    QKeyEvent missedRelease(QEvent::KeyPress,Qt::Key_W,Qt::NoModifier,0x11,0x57,0);
+    QApplication::sendEvent(&view,&missedRelease);
+    QTest::qWait(140);
+    QCOMPARE(scene.camera.eye,beforeLostRelease);
+#endif
+    QTest::keyClick(&view,Qt::Key_T);
+    QCOMPARE(scene.camera.mode,ViewMode::Orbit);
     QCoreApplication::processEvents();
     QSignalSpy idleFrames(&view,&QOpenGLWidget::frameSwapped);
     QTest::qWait(220);

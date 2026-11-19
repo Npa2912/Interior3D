@@ -3,6 +3,7 @@
 
 #include <QKeyEvent>
 #include <QCursor>
+#include <QGuiApplication>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #endif
@@ -209,6 +210,14 @@ Viewport::Viewport(Scene &model,QWidget *parent):QOpenGLWidget(parent),scene(mod
     walkReticle->setFixedSize(20,20);
     walkReticle->hide();
     connect(&animation,&QTimer::timeout,this,&Viewport::tick);
+    connect(qGuiApp,&QGuiApplication::applicationStateChanged,this,[this](Qt::ApplicationState state){
+        if(state!=Qt::ApplicationActive) {
+            keys.clear();
+            releaseCursor();
+        } else {
+            captureCursor();
+        }
+    });
     connect(this,&QOpenGLWidget::frameSwapped,this,[this]{++frameCount;});
     animation.setTimerType(Qt::PreciseTimer);
     animation.start(16);
@@ -466,6 +475,7 @@ void Viewport::setMode(ViewMode mode) {
         captureCursor();
     } else {
         releaseCursor(true);
+        if(mode==ViewMode::Orbit) setFocus(Qt::OtherFocusReason);
     }
     emit modeChanged(mode);
     update();
@@ -682,21 +692,23 @@ void Viewport::keyPressEvent(QKeyEvent *event) {
         event->accept();
         return;
     }
-    if(scene.camera.mode!=ViewMode::Walk) { QOpenGLWidget::keyPressEvent(event); return; }
-    if(!event->isAutoRepeat() && cursorCaptured) {
-        switch(event->key()) {
-        case Qt::Key_T:
-            setMode(beforeWalk);
-            break;
-        case Qt::Key_W: case Qt::Key_A: case Qt::Key_S: case Qt::Key_D:
-            if(!(event->modifiers() & (Qt::ControlModifier|Qt::AltModifier|Qt::MetaModifier)))
-                keys.insert(event->key());
-            break;
-        default:
-            break;
-        }
+    if(walkthrough && event->key()==Qt::Key_T) {
+        if(!event->isAutoRepeat()) setMode(beforeWalk);
+        event->accept();
+        return;
     }
-    event->accept();
+    const int key=event->key();
+    const bool movementKey=key==Qt::Key_W || key==Qt::Key_A || key==Qt::Key_S || key==Qt::Key_D;
+    const auto shortcutModifiers=Qt::ControlModifier|Qt::AltModifier|Qt::MetaModifier;
+    if(movementKey && (walkthrough ? cursorCaptured : scene.camera.mode==ViewMode::Orbit) &&
+       !(event->modifiers() & shortcutModifiers)) {
+        if(!event->isAutoRepeat() && hasFocus() && window()->isActiveWindow())
+            keys.insert(key,event->nativeVirtualKey());
+        event->accept();
+        return;
+    }
+    if(walkthrough) event->accept();
+    else QOpenGLWidget::keyPressEvent(event);
 }
 
 void Viewport::keyReleaseEvent(QKeyEvent *event) {
@@ -730,26 +742,49 @@ void Viewport::tick() {
        scene.camera.mode!=ViewMode::Plan && uploadedCharacters<greetingText().size()) {
         animationChanged|=uploadedCharacters!=std::min(int(greetingText().size()),int(typing.elapsed()/135));
     }
-    if(cursorCaptured && !keys.isEmpty()) {
-        auto &camera=scene.camera;
-        auto front=camera.forward();
-        front.setY(0);
-        front.normalize();
-        const auto right=QVector3D::crossProduct(front,{0,1,0});
-        const auto advance=front*(int(keys.contains(Qt::Key_W))-int(keys.contains(Qt::Key_S)))+
-                           right*(int(keys.contains(Qt::Key_D))-int(keys.contains(Qt::Key_A)));
-        const auto previous=camera.eye;
-        camera.eye+=advance.normalized()*seconds*2.1f;
-        camera.eye.setX(std::clamp(camera.eye.x(),-scene.room.x()/2+.23f,scene.room.x()/2-.23f));
-        camera.eye.setY(std::clamp(camera.eye.y(),.5f,scene.room.y()-.15f));
-        camera.eye.setZ(std::clamp(camera.eye.z(),-scene.room.z()/2+.23f,scene.room.z()/2-.23f));
-        animationChanged|=previous!=camera.eye;
-    }
+    animationChanged|=moveCamera(seconds);
     if(meter.elapsed()>=1000) {
         emit statsChanged(qRound(frameCount*1000./meter.restart()));
         frameCount=0;
     }
     if(animationChanged) update();
+}
+
+bool Viewport::moveCamera(float seconds) {
+    if(keys.isEmpty()) return false;
+    auto &camera=scene.camera;
+    const bool walk=camera.mode==ViewMode::Walk;
+    if(!hasFocus() || !window()->isActiveWindow() ||
+       (walk ? !cursorCaptured : camera.mode!=ViewMode::Orbit)) {
+        keys.clear();
+        return false;
+    }
+#ifdef Q_OS_WIN
+    // A lost Qt KeyRelease must not leave the camera moving. Check the Win32
+    // down bit only for keys already pressed in this viewport.
+    for(auto it=keys.begin();it!=keys.end();) {
+        if(it.value()!=0 && !(GetAsyncKeyState(int(it.value())) & 0x8000))
+            it=keys.erase(it);
+        else
+            ++it;
+    }
+#endif
+    const int forward=int(keys.contains(Qt::Key_W))-int(keys.contains(Qt::Key_S));
+    const int sideways=int(keys.contains(Qt::Key_D))-int(keys.contains(Qt::Key_A));
+    if(forward==0 && sideways==0) return false;
+
+    auto heading=walk?camera.forward():camera.target-camera.position();
+    heading.setY(0);
+    heading.normalize();
+    const auto right=QVector3D::crossProduct(heading,{0,1,0});
+    auto &position=walk?camera.eye:camera.target;
+    const auto previous=position;
+    position+=(heading*forward+right*sideways).normalized()*seconds*2.1f;
+    const float limitX=walk ? scene.room.x()/2-.23f : 90.f;
+    const float limitZ=walk ? scene.room.z()/2-.23f : 90.f;
+    position.setX(std::clamp(position.x(),-limitX,limitX));
+    position.setZ(std::clamp(position.z(),-limitZ,limitZ));
+    return position!=previous;
 }
 
 const Object *Viewport::firstObject(const QString &kind) const {
