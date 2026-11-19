@@ -31,6 +31,7 @@
 #include <QToolButton>
 #include <algorithm>
 #include <functional>
+#include <limits>
 
 namespace {
 class SceneEdit final : public QUndoCommand {
@@ -831,14 +832,61 @@ void Editor::chooseExport() {
     if(!exportImage(file)) QMessageBox::warning(this,"Xuất ảnh","Không thể xuất framebuffer OpenGL vào "+file);
 }
 
+namespace {
+QRectF furnitureFootprint(const Object &object,const QVector3D &room) {
+    const auto transform=object.matrix();
+    QPointF minimum(1000,1000),maximum(-1000,-1000);
+    for(const auto &part:geometry(object,room)) {
+        const auto matrix=transform*part.matrix();
+        for(float x:{-.5f,.5f}) for(float y:{-.5f,.5f}) for(float z:{-.5f,.5f}) {
+            const auto p=matrix.map(QVector3D(x,y,z));
+            minimum.setX(std::min(minimum.x(),double(p.x())));
+            minimum.setY(std::min(minimum.y(),double(p.z())));
+            maximum.setX(std::max(maximum.x(),double(p.x())));
+            maximum.setY(std::max(maximum.y(),double(p.z())));
+        }
+    }
+    return QRectF(minimum,maximum);
+}
+
+QVector3D findFurniturePlacement(const Scene &scene,const QString &kind) {
+    Object item;
+    item.kind=kind;
+    item.color=Qt::white;
+    const auto footprint=furnitureFootprint(item,scene.room).adjusted(-.07,-.07,.07,.07);
+    QVector<QRectF> occupied;
+    for(const auto &object:scene.objects)
+        if(!isArchitecture(object) && object.kind!="rug" && object.kind!="tv")
+            occupied.append(furnitureFootprint(object,scene.room));
+
+    const double w=scene.room.x(),d=scene.room.z();
+    const QRectF floor(-w/2+.10,-d/2+.10,w-.20,d-.20);
+    const QPointF preferred(.15,1.20);
+    QPointF best=preferred;
+    double bestDistance=std::numeric_limits<double>::infinity();
+    for(double z=floor.top();z<=floor.bottom();z+=.24) {
+        for(double x=floor.left();x<=floor.right();x+=.24) {
+            const QPointF candidate(x,z),offset=candidate-preferred;
+            const double distance=QPointF::dotProduct(offset,offset);
+            const auto bounds=footprint.translated(candidate);
+            if(distance>=bestDistance || !floor.contains(bounds)) continue;
+            if(std::any_of(occupied.cbegin(),occupied.cend(),[&](const QRectF &other){return other.intersects(bounds);}))
+                continue;
+            best=candidate;
+            bestDistance=distance;
+        }
+    }
+    return {float(best.x()),0,float(best.y())};
+}
+}
+
 void Editor::addFurniture(const QString &kind) {
     if(scene.objects.size()>=500) {
         QMessageBox::information(this,"Thư viện nội thất","Dự án đã đạt giới hạn 500 đối tượng.");
         return;
     }
     edit("Thêm nội thất",[&]{
-        const int count=scene.objects.size();
-        viewport->select(scene.add(kind,{-.9f+(count%5)*.44f,0,.68f+(count%3)*.39f}));
+        viewport->select(scene.add(kind,findFurniturePlacement(scene,kind)));
     });
 }
 

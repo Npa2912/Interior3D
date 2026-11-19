@@ -627,14 +627,14 @@ void Viewport::mouseMoveEvent(QMouseEvent *event) {
         const float distance=camera.mode==ViewMode::Plan?camera.planDistance:camera.distance;
         target+=inverse.mapVector(QVector3D(-delta.x(),delta.y(),0))*distance*.0015f;
         for(int i=0;i<3;++i) target[i]=std::clamp(target[i],-90.f,90.f);
-    } else if(button==Qt::LeftButton && tool!=EditTool::Select) {
+    } else if(button==Qt::LeftButton) {
         auto *o=scene.find(selected);
         if(!o || o->locked) return;
         if(!dragging) {
             dragging=true;
             emit editStarted();
         }
-        if(tool==EditTool::Move) {
+        if(tool==EditTool::Move || tool==EditTool::Select) {
             if(!dragAxis.isNull()) {
                 const auto origin=o->position+QVector3D(0,.35f,0);
                 const QPointF axis=project(origin+dragAxis)-project(origin);

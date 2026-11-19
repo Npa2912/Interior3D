@@ -34,7 +34,7 @@ Với generator nhiều cấu hình, thêm `--config Debug` khi build và `-C De
 |---|---|
 | Chọn | Nhấn trái lên đối tượng hoặc chọn trong danh sách **Bố trí nội thất** |
 | Camera 3D | Dùng WASD để dịch chuyển góc nhìn theo mặt sàn, bốn phím mũi tên hoặc kéo chuột phải để xoay, kéo chuột giữa để pan, lăn chuột để zoom. Nhấp vào vùng 3D nếu con trỏ đang ở ô nhập liệu |
-| Di chuyển | Chọn **Di chuyển**, kéo vật trên mặt sàn hoặc kéo tay nắm đỏ, xanh lá, xanh dương theo X, Y, Z |
+| Di chuyển | Kéo vật trên mặt sàn bằng công cụ **Chọn** hoặc **Di chuyển**. Trong **Di chuyển**, có thể kéo tay nắm đỏ, xanh lá, xanh dương theo X, Y, Z |
 | Xoay và tỷ lệ | Kéo đối tượng với công cụ tương ứng hoặc nhập trực tiếp ba trục trong bảng thuộc tính |
 | Thêm đồ | Nhấn một mục trong thư viện. Có thể lọc danh mục hoặc tìm theo tên |
 | Cảnh nhìn từ trên | Nhấn **Xem 2D (Mặt bằng)**, kéo chuột phải để pan |

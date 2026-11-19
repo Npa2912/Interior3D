@@ -291,7 +291,10 @@ void EditorTest::editorWorkflow() {
     auto *locked=editor.findChild<QCheckBox *>("objectLock");
     QVERIFY(x && rotation && scale && material && locked);
     const auto old=editor.model().find(id)->position.x();
-    x->setValue(1.25);
+    x->setFocus();
+    QTest::keyClick(x,Qt::Key_A,Qt::ControlModifier);
+    QTest::keyClicks(x,"1.25");
+    QTest::keyClick(x,Qt::Key_Return);
     QCOMPARE(editor.model().find(id)->position.x(),1.25f);
     auto tool=[&](const QString &name) {
         for(auto *button:editor.findChildren<QToolButton *>()) if(button->text()==name) return button;
@@ -303,10 +306,43 @@ void EditorTest::editorWorkflow() {
     QCOMPARE(editor.model().find(id)->position.x(),old);
     QTest::mouseClick(redo,Qt::LeftButton);
     QCOMPARE(editor.model().find(id)->position.x(),1.25f);
-    rotation->setValue(42);
+    rotation->setFocus();
+    QTest::keyClick(rotation,Qt::Key_A,Qt::ControlModifier);
+    QTest::keyClicks(rotation,"42");
+    QTest::keyClick(rotation,Qt::Key_Return);
     scale->setValue(1.70);
     QCOMPARE(editor.model().find(id)->rotation.y(),42.f);
     QCOMPARE(editor.model().find(id)->scale.z(),1.7f);
+    // The model is draggable immediately after insertion, with the default Select tool.
+    auto *view=editor.view();
+    const auto initialPosition=editor.model().find(id)->position;
+    const auto projected=view->project(initialPosition+QVector3D(0,1.f,0)).toPoint();
+    QPoint grip;
+    for(int dy=-25;dy<=25 && grip.isNull();++dy)
+        for(int dx=-25;dx<=25;++dx) {
+            QPoint pixel=projected+QPoint(dx,dy);
+            if(view->rect().contains(pixel) && view->pick(pixel)==id) { grip=pixel; break; }
+        }
+    QVERIFY(!grip.isNull());
+    auto dragObject=[&]{
+        QTest::mousePress(view,Qt::LeftButton,Qt::NoModifier,grip);
+        const QPoint destination=grip+QPoint(24,12);
+        QMouseEvent move(QEvent::MouseMove,destination,view->mapToGlobal(destination),
+                         Qt::NoButton,Qt::LeftButton,Qt::NoModifier);
+        QApplication::sendEvent(view,&move);
+        QTest::mouseRelease(view,Qt::LeftButton,Qt::NoModifier,destination);
+    };
+    dragObject();
+    QVERIFY(editor.model().find(id)->position!=initialPosition);
+    QTest::mouseClick(undo,Qt::LeftButton);
+    QCOMPARE(editor.model().find(id)->position,initialPosition);
+    auto *rotateTool=tool("Xoay");
+    QVERIFY(rotateTool);
+    QTest::mouseClick(rotateTool,Qt::LeftButton);
+    dragObject();
+    QVERIFY(editor.model().find(id)->rotation.y()!=42.f);
+    QTest::mouseClick(undo,Qt::LeftButton);
+    QCOMPARE(editor.model().find(id)->rotation.y(),42.f);
     const auto plain=editor.view()->grabFramebuffer();
     material->setCurrentText("Gỗ");
     QCOMPARE(editor.model().find(id)->material,QString("Gỗ"));
