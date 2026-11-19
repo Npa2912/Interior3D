@@ -115,7 +115,8 @@ const QString &greetingText() {
     return text;
 }
 
-QImage greetingCard(int visibleCharacters) {
+namespace {
+QImage cardBackground() {
     QImage image(1024,536,QImage::Format_RGBA8888);
     QPainter p(&image);
     p.setRenderHint(QPainter::Antialiasing);
@@ -133,6 +134,16 @@ QImage greetingCard(int visibleCharacters) {
         p.drawEllipse(QPointF(x,y),1+i%3,1+i%3);
     }
     bouquet(p);
+    p.setPen(QPen(QColor("#d1a878"),2));
+    p.drawLine(63,357,274,357);
+    return image;
+}
+}
+
+QImage greetingCard(int visibleCharacters) {
+    static const QImage background=cardBackground();
+    QImage image=background.copy();
+    QPainter p(&image);
     const auto prefix=greetingText().left(visibleCharacters).split('\n');
     QFont font;
     font.setStyleHint(QFont::Serif);
@@ -145,7 +156,5 @@ QImage greetingCard(int visibleCharacters) {
     font.setWeight(QFont::Medium);
     p.setFont(font);
     p.drawText(QRect(61,231,560,110),Qt::AlignVCenter|Qt::AlignLeft,prefix.value(1));
-    p.setPen(QPen(QColor("#d1a878"),2));
-    p.drawLine(63,357,274,357);
     return image;
 }

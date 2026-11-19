@@ -2,6 +2,10 @@
 #include "TvGreeting.h"
 
 #include <QKeyEvent>
+#include <QCursor>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
@@ -198,14 +202,22 @@ Viewport::Viewport(Scene &model,QWidget *parent):QOpenGLWidget(parent),scene(mod
         "border:1px solid #aa9174; border-radius:8px; padding:5px 9px;"
         "font-size:13px; font-weight:600; }");
     remoteHint->hide();
+    walkReticle=new QLabel("+",this);
+    walkReticle->setAttribute(Qt::WA_TransparentForMouseEvents);
+    walkReticle->setAlignment(Qt::AlignCenter);
+    walkReticle->setStyleSheet("color:#fff4db; font-size:16px; font-weight:600; background:transparent;");
+    walkReticle->setFixedSize(20,20);
+    walkReticle->hide();
     connect(&animation,&QTimer::timeout,this,&Viewport::tick);
     connect(this,&QOpenGLWidget::frameSwapped,this,[this]{++frameCount;});
+    animation.setTimerType(Qt::PreciseTimer);
     animation.start(16);
     meter.start();
     step.start();
 }
 
 Viewport::~Viewport() {
+    releaseCursor();
     if(context()) disconnect(context(),nullptr,this,nullptr);
     cleanup();
 }
@@ -237,6 +249,10 @@ void Viewport::initializeGL() {
     }
     error.clear();
     shader=std::move(program);
+    modelUniform=shader->uniformLocation("model");
+    normalUniform=shader->uniformLocation("normalMatrix");
+    colorUniform=shader->uniformLocation("color");
+    materialUniform=shader->uniformLocation("material");
     const auto data=vertices();
     roundedCount=data.size()/6-cubeCount-cylinderCount;
     vao.create();
@@ -256,6 +272,8 @@ void Viewport::initializeGL() {
 void Viewport::resizeGL(int w,int h) {
     Q_UNUSED(w);
     Q_UNUSED(h);
+    walkReticle->move(rect().center()-QPoint(10,10));
+    refreshCursorClip();
     update();
 }
 
@@ -268,19 +286,33 @@ bool Viewport::visible(const Object &o) const {
 }
 
 void Viewport::draw(const QMatrix4x4 &model,QColor color,const QString &material,bool cylinder,bool rounded) {
-    shader->setUniformValue("model",model);
-    shader->setUniformValue("normalMatrix",model.normalMatrix());
-    shader->setUniformValue("color",QVector3D(color.redF(),color.greenF(),color.blueF()));
-    shader->setUniformValue("material",materialCode(material));
+    shader->setUniformValue(modelUniform,model);
+    shader->setUniformValue(normalUniform,model.normalMatrix());
+    shader->setUniformValue(colorUniform,QVector3D(color.redF(),color.greenF(),color.blueF()));
+    shader->setUniformValue(materialUniform,materialCode(material));
     if(cylinder) glDrawArrays(GL_TRIANGLES,cubeCount,cylinderCount);
     else if(rounded) glDrawArrays(GL_TRIANGLES,cubeCount+cylinderCount,roundedCount);
     else glDrawArrays(GL_TRIANGLES,0,cubeCount);
 }
 
+const QVector<Part> &Viewport::partsFor(const Object &object) const {
+    if(cachedRoom!=scene.room || geometryCache.size()>scene.objects.size()+64) {
+        geometryCache.clear();
+        cachedRoom=scene.room;
+    }
+    auto &entry=geometryCache[object.id];
+    if(entry.kind!=object.kind || entry.color!=object.color) {
+        entry.kind=object.kind;
+        entry.color=object.color;
+        entry.parts=::geometry(object,scene.room);
+    }
+    return entry.parts;
+}
+
 void Viewport::drawSelection(const Object &o) {
     QMatrix4x4 transform=o.matrix();
     QVector3D minimum(1000,1000,1000),maximum(-1000,-1000,-1000);
-    for(const Part &part: ::geometry(o,scene.room)) {
+    for(const Part &part: partsFor(o)) {
         const auto matrix=part.matrix();
         for(float x:{-.5f,.5f}) for(float y:{-.5f,.5f}) for(float z:{-.5f,.5f}) {
             const auto p=matrix.map(QVector3D(x,y,z));
@@ -344,13 +376,13 @@ void Viewport::paintGL() {
     for(const auto &o:scene.objects) {
         if(!visible(o)) continue;
         const auto transform=o.matrix();
-        for(const auto &part: ::geometry(o,scene.room)) {
+        for(const auto &part: partsFor(o)) {
             const QString material=part.tint && o.material!="Mặc định" ? o.material : part.material;
             const bool rounded=part.material=="Vải" && (o.kind=="sofa" || o.kind=="chair" || o.kind=="bed");
             draw(transform*part.matrix(),part.color,material,part.cylinder,rounded);
         }
     }
-    if(const auto *tv=scene.find(poweredTv);tv && tv->kind=="tv" && scene.camera.mode!=ViewMode::Plan) drawTv(*tv);
+    if(const auto *tv=std::as_const(scene).find(poweredTv);tv && tv->kind=="tv" && scene.camera.mode!=ViewMode::Plan) drawTv(*tv);
     if(remoteState!=RemoteState::Held && (remoteState!=RemoteState::OnTable || firstObject("table")))
         drawRemote(remoteTransform(),false);
     if(grid) {
@@ -368,14 +400,14 @@ void Viewport::paintGL() {
             draw(m,QColor("#788c99"),"Phát sáng");
         }
     }
-    if(const auto *o=scene.find(selected);o && visible(*o) && scene.camera.mode!=ViewMode::Walk) drawSelection(*o);
+    if(const auto *o=std::as_const(scene).find(selected);o && visible(*o) && scene.camera.mode!=ViewMode::Walk) drawSelection(*o);
     if(remoteState==RemoteState::Held && scene.camera.mode!=ViewMode::Plan) {
         glDisable(GL_DEPTH_TEST);
         drawRemote(remoteTransform(),true);
         glEnable(GL_DEPTH_TEST);
     }
     shader->release();
-
+    updateRemoteHint();
 }
 
 QPointF Viewport::project(QVector3D world) const {
@@ -395,7 +427,7 @@ int Viewport::pick(QPointF pixel) const {
     for(const auto &o:scene.objects) {
         if(!visible(o)) continue;
         const auto transform=o.matrix();
-        for(const auto &part: ::geometry(o,scene.room)) {
+        for(const auto &part: partsFor(o)) {
             const auto local=(transform*part.matrix()).inverted();
             // Keeping the transformed direction unnormalized preserves world-ray distance.
             if(intersectBox(local.map(near),local.mapVector(direction),closest,part.cylinder)) id=o.id;
@@ -423,14 +455,88 @@ void Viewport::setTool(EditTool value) { tool=value; update(); }
 void Viewport::setGrid(bool enabled) { grid=enabled; update(); }
 
 void Viewport::setMode(ViewMode mode) {
+    if(mode==ViewMode::Walk && scene.camera.mode!=ViewMode::Walk)
+        beforeWalk=scene.camera.mode;
     scene.camera.mode=mode;
     keys.clear();
+    button=Qt::NoButton;
     setMouseTracking(mode==ViewMode::Walk);
-    walkMouseReady=false;
-    setCursor(mode==ViewMode::Walk?Qt::BlankCursor:Qt::ArrowCursor);
-    if(mode==ViewMode::Walk) setFocus();
+    if(mode==ViewMode::Walk) {
+        setFocus(Qt::OtherFocusReason);
+        captureCursor();
+    } else {
+        releaseCursor(true);
+    }
     emit modeChanged(mode);
     update();
+}
+
+void Viewport::refreshCursorClip() {
+#ifdef Q_OS_WIN
+    if(!cursorCaptured) return;
+    const QWidget *top=window();
+    const auto handle=reinterpret_cast<HWND>(top->winId());
+    const qreal scale=top->devicePixelRatioF();
+    const QPoint offset=mapTo(top,QPoint());
+    POINT origin{qRound(offset.x()*scale),qRound(offset.y()*scale)};
+    if(!ClientToScreen(handle,&origin)) return;
+    RECT viewportRect{origin.x,origin.y,origin.x+qRound(width()*scale),origin.y+qRound(height()*scale)};
+    const QRect next(viewportRect.left,viewportRect.top,viewportRect.right-viewportRect.left,
+                     viewportRect.bottom-viewportRect.top);
+    if(next!=clippedRect && ClipCursor(&viewportRect)) {
+        nativeClip=true;
+        clippedRect=next;
+    }
+#endif
+}
+
+void Viewport::captureCursor() {
+    if(cursorCaptured || scene.camera.mode!=ViewMode::Walk || !isVisible() ||
+       !hasFocus() || !window()->isActiveWindow()) return;
+    previousCursor=QCursor::pos();
+    cursorCaptured=true;
+    walkReticle->move(rect().center()-QPoint(10,10));
+    walkReticle->show();
+    QCursor::setPos(mapToGlobal(rect().center()));
+    grabMouse(QCursor(Qt::BlankCursor));
+    refreshCursorClip();
+}
+
+void Viewport::releaseCursor(bool restorePosition) {
+    if(!cursorCaptured) return;
+    cursorCaptured=false;
+    walkReticle->hide();
+    keys.clear();
+#ifdef Q_OS_WIN
+    if(nativeClip) {
+        ClipCursor(nullptr);
+        nativeClip=false;
+        clippedRect={};
+    }
+#endif
+    if(mouseGrabber()==this) releaseMouse();
+    if(restorePosition && window()->isActiveWindow()) QCursor::setPos(previousCursor);
+}
+
+bool Viewport::event(QEvent *event) {
+    switch(event->type()) {
+    case QEvent::WindowDeactivate:
+    case QEvent::Hide:
+        keys.clear();
+        releaseCursor();
+        break;
+    case QEvent::WindowActivate:
+    case QEvent::Show:
+        QTimer::singleShot(0,this,&Viewport::captureCursor);
+        break;
+    default:
+        break;
+    }
+    return QOpenGLWidget::event(event);
+}
+
+bool Viewport::focusNextPrevChild(bool next) {
+    return !cursorCaptured && QOpenGLWidget::focusNextPrevChild(next);
 }
 
 void Viewport::resetCamera() {
@@ -442,8 +548,8 @@ void Viewport::resetCamera() {
 void Viewport::mousePressEvent(QMouseEvent *event) {
     setFocus();
     button=event->button();
-    last=initial=event->position();
-    walkMouseReady=true;
+    initial=scene.camera.mode==ViewMode::Walk && cursorCaptured?QPointF(rect().center()):event->position();
+    last=initial;
     dragAxis={};
     if(button!=Qt::LeftButton) return;
     const int hit=pick(initial);
@@ -466,20 +572,25 @@ void Viewport::mousePressEvent(QMouseEvent *event) {
 }
 
 void Viewport::mouseMoveEvent(QMouseEvent *event) {
-    if(scene.camera.mode==ViewMode::Walk && !walkMouseReady) {
-        walkMouseReady=true;
-        last=event->position();
-        return;
-    }
-    if(button==Qt::NoButton && scene.camera.mode!=ViewMode::Walk) return;
-    QPointF delta=event->position()-last;
-    if(delta.isNull()) return;
-    last=event->position();
     Camera &camera=scene.camera;
     if(camera.mode==ViewMode::Walk) {
-        camera.walkYaw=wrap(camera.walkYaw+float(delta.x())*.25f);
-        camera.walkPitch=std::clamp(camera.walkPitch-float(delta.y())*.25f,-85.f,85.f);
-    } else if(button==Qt::RightButton && camera.mode==ViewMode::Orbit) {
+        if(!cursorCaptured) return;
+        const QPoint center=mapToGlobal(rect().center());
+        const QPoint delta=event->globalPosition().toPoint()-center;
+        // Recentring makes relative aiming work even when the user keeps turning.
+        // The event generated by warping back to the centre has no movement.
+        if(delta.isNull()) return;
+        camera.walkYaw=wrap(camera.walkYaw+delta.x()*.25f);
+        camera.walkPitch=std::clamp(camera.walkPitch-delta.y()*.25f,-85.f,85.f);
+        QCursor::setPos(center);
+        update();
+        return;
+    }
+    if(button==Qt::NoButton) return;
+    const QPointF delta=event->position()-last;
+    if(delta.isNull()) return;
+    last=event->position();
+    if(button==Qt::RightButton && camera.mode==ViewMode::Orbit) {
         camera.yaw=wrap(camera.yaw-float(delta.x())*.38f);
         camera.pitch=std::clamp(camera.pitch+float(delta.y())*.38f,-20.f,82.f);
     } else if(button==Qt::MiddleButton || (button==Qt::RightButton && camera.mode==ViewMode::Plan)) {
@@ -564,8 +675,19 @@ void Viewport::keyPressEvent(QKeyEvent *event) {
         return;
     }
     if(scene.camera.mode!=ViewMode::Walk) { QOpenGLWidget::keyPressEvent(event); return; }
-    if(event->key()==Qt::Key_Escape) setMode(ViewMode::Orbit);
-    else keys.insert(event->key());
+    if(!event->isAutoRepeat() && cursorCaptured) {
+        switch(event->key()) {
+        case Qt::Key_T:
+            setMode(beforeWalk);
+            break;
+        case Qt::Key_W: case Qt::Key_A: case Qt::Key_S: case Qt::Key_D:
+            if(!(event->modifiers() & (Qt::ControlModifier|Qt::AltModifier|Qt::MetaModifier)))
+                keys.insert(event->key());
+            break;
+        default:
+            break;
+        }
+    }
     event->accept();
 }
 
@@ -576,7 +698,7 @@ void Viewport::keyReleaseEvent(QKeyEvent *event) {
 
 void Viewport::focusOutEvent(QFocusEvent *event) {
     keys.clear();
-    walkMouseReady=false;
+    releaseCursor();
     button=Qt::NoButton;
     if(dragging) {
         dragging=false;
@@ -585,11 +707,22 @@ void Viewport::focusOutEvent(QFocusEvent *event) {
     QOpenGLWidget::focusOutEvent(event);
 }
 
+void Viewport::focusInEvent(QFocusEvent *event) {
+    QOpenGLWidget::focusInEvent(event);
+    captureCursor();
+}
+
 void Viewport::tick() {
     const float seconds=std::min(.05f,step.restart()/1000.f);
     if(!isVisible()) return;
-    stepRemote(seconds);
-    if(scene.camera.mode==ViewMode::Walk && !keys.isEmpty()) {
+    if(cursorCaptured) refreshCursorClip();
+    bool animationChanged=remoteState==RemoteState::Falling;
+    if(animationChanged) stepRemote(seconds);
+    if(const auto *tv=std::as_const(scene).find(poweredTv);tv && tv->kind=="tv" &&
+       scene.camera.mode!=ViewMode::Plan && uploadedCharacters<greetingText().size()) {
+        animationChanged|=uploadedCharacters!=std::min(int(greetingText().size()),int(typing.elapsed()/135));
+    }
+    if(cursorCaptured && !keys.isEmpty()) {
         auto &camera=scene.camera;
         auto front=camera.forward();
         front.setY(0);
@@ -597,17 +730,18 @@ void Viewport::tick() {
         const auto right=QVector3D::crossProduct(front,{0,1,0});
         const auto advance=front*(int(keys.contains(Qt::Key_W))-int(keys.contains(Qt::Key_S)))+
                            right*(int(keys.contains(Qt::Key_D))-int(keys.contains(Qt::Key_A)));
+        const auto previous=camera.eye;
         camera.eye+=advance.normalized()*seconds*2.1f;
         camera.eye.setX(std::clamp(camera.eye.x(),-scene.room.x()/2+.23f,scene.room.x()/2-.23f));
         camera.eye.setY(std::clamp(camera.eye.y(),.5f,scene.room.y()-.15f));
         camera.eye.setZ(std::clamp(camera.eye.z(),-scene.room.z()/2+.23f,scene.room.z()/2-.23f));
+        animationChanged|=previous!=camera.eye;
     }
-    updateRemoteHint();
     if(meter.elapsed()>=1000) {
         emit statsChanged(qRound(frameCount*1000./meter.restart()));
         frameCount=0;
     }
-    update();
+    if(animationChanged) update();
 }
 
 const Object *Viewport::firstObject(const QString &kind) const {
@@ -689,9 +823,9 @@ void Viewport::drawTv(const Object &tv) {
     panel.scale(1.91f,1.f,.002f);
     tvTexture->bind(0);
     shader->setUniformValue("tvScreen",0);
-    shader->setUniformValue("model",panel);
-    shader->setUniformValue("normalMatrix",panel.normalMatrix());
-    shader->setUniformValue("material",7);
+    shader->setUniformValue(modelUniform,panel);
+    shader->setUniformValue(normalUniform,panel.normalMatrix());
+    shader->setUniformValue(materialUniform,7);
     glDrawArrays(GL_TRIANGLES,0,cubeCount);
     tvTexture->release(0);
 }
@@ -701,8 +835,17 @@ void Viewport::updateRemoteHint() {
     QPointF marker;
     if(remoteState==RemoteState::Held) {
         if(scene.camera.mode!=ViewMode::Plan) text="M  Bật/tắt TV     X  Thả remote";
+        if(scene.camera.mode==ViewMode::Walk) text+="     T  Thoát tham quan";
     } else if(remoteState==RemoteState::Falling) {
         text="Đang thả remote…";
+    } else if(scene.camera.mode==ViewMode::Walk) {
+        text="W A S D  Di chuyển     T  Thoát tham quan";
+        if(remoteState!=RemoteState::OnTable || firstObject("table")) {
+            const auto center=remoteTransform().map(QVector3D());
+            const auto clip=viewProjection()*QVector4D(center,1);
+            if(clip.w()>0 && (project(center).toPoint()-rect().center()).manhattanLength()<45 &&
+               pick(rect().center())==remoteHit) text="Nhấp để nhặt remote     T  Thoát tham quan";
+        }
     } else if(remoteState!=RemoteState::OnTable || firstObject("table")) {
         const auto center=remoteTransform().map(QVector3D());
         const auto clip=viewProjection()*QVector4D(center,1);
@@ -719,7 +862,7 @@ void Viewport::updateRemoteHint() {
         remoteHint->adjustSize();
     }
     const int w=remoteHint->width();
-    const bool tagged=remoteState==RemoteState::OnTable || remoteState==RemoteState::Dropped;
+    const bool tagged=!marker.isNull();
     const int x=tagged?std::clamp(qRound(marker.x())-w/2,4,std::max(4,width()-w-4)):18;
     const int y=tagged?qRound(marker.y())-remoteHint->height()-4:height()-remoteHint->height()-15;
     remoteHint->move(x,y);

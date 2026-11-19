@@ -44,3 +44,10 @@ CTest chạy **2/2 mục thành công**. Bốn hàm Qt Test thực thi gồm `sc
 ## Bổ sung remote TV
 
 Kiểm thử `remoteGreeting` chạy trên Xvfb và Mesa llvmpipe. CTest đạt **2/2** sau khi bổ sung. Bài kiểm thử nhấp remote trên bàn, so sánh framebuffer trước và sau khi bật TV bằng M, kiểm tra chữ thay đổi theo thời gian, bật/tắt bằng M, thả bằng X và nhặt lại sau khi remote rơi.
+
+## Bổ sung kiểm thử chế độ tham quan
+
+- PASS trên Qt 6/Xvfb. Chế độ tham quan giữ chuột, đưa con trỏ về tâm sau khi xoay và trả con trỏ khi nhấn **T**. Esc và Tab không thoát khỏi chế độ tham quan.
+- PASS trên Qt 6/Xvfb. Camera dừng khi nhả W, bỏ qua sự kiện lặp của phím đã nhả và không tự đi tiếp khi chuyển sang cửa sổ khác rồi quay lại.
+- PASS trên Qt 6/Xvfb. Cảnh tĩnh ở mặt bằng phát sinh tối đa một lần đổi khung hình trong 220 ms. Các bài kiểm thử tương tác remote và hoạt ảnh TV vẫn chạy qua.
+- NOT TESTED. Giới hạn con trỏ native qua Win32 và độ mượt trên Windows chưa được kiểm tra trên máy Windows.

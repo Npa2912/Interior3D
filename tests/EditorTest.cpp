@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCursor>
 #include <QColorDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -127,17 +128,57 @@ void EditorTest::viewportWorkflow() {
     scene.light.directional=0;
     scene.light.point=0;
     QVERIFY(view.grabFramebuffer()!=lit);
+    view.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&view));
     view.setMode(ViewMode::Walk);
+    QTRY_COMPARE(QWidget::mouseGrabber(),&view);
+    const QPoint center=view.rect().center(), globalCenter=view.mapToGlobal(center);
+    QTRY_COMPARE(QCursor::pos(),globalCenter);
     auto eye=scene.camera.eye;
     QTest::keyPress(&view,Qt::Key_W);
     QTest::qWait(110);
     QTest::keyRelease(&view,Qt::Key_W);
     QVERIFY(scene.camera.eye.z()<eye.z());
     QCOMPARE(scene.camera.eye.y(),eye.y());
-    drag(Qt::LeftButton,{260,240},{300,220});
-    QVERIFY(scene.camera.walkYaw!=-90);
+    const auto releasedEye=scene.camera.eye;
+    QKeyEvent repeat(QEvent::KeyPress,Qt::Key_W,Qt::NoModifier,QString(),true);
+    QApplication::sendEvent(&view,&repeat);
+    QTest::qWait(140);
+    QCOMPARE(scene.camera.eye,releasedEye);
+
+    const auto yawBefore=scene.camera.walkYaw;
+    const QPoint mouseTarget=center+QPoint(40,-20);
+    QMouseEvent move(QEvent::MouseMove,mouseTarget,view.mapToGlobal(mouseTarget),
+                     Qt::NoButton,Qt::NoButton,Qt::NoModifier);
+    QApplication::sendEvent(&view,&move);
+    QCOMPARE(scene.camera.walkYaw,yawBefore+10.f);
+    QTRY_COMPARE(QCursor::pos(),globalCenter);
     QTest::keyClick(&view,Qt::Key_Escape);
-    QCOMPARE(scene.camera.mode,ViewMode::Orbit);
+    QTest::keyClick(&view,Qt::Key_Tab);
+    QCOMPARE(scene.camera.mode,ViewMode::Walk);
+    QCOMPARE(QWidget::mouseGrabber(),&view);
+
+    QTest::keyPress(&view,Qt::Key_W);
+    QWidget otherWindow;
+    otherWindow.show();
+    otherWindow.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&otherWindow));
+    QTRY_VERIFY(QWidget::mouseGrabber()!=&view);
+    const auto inactiveEye=scene.camera.eye;
+    view.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&view));
+    QTRY_COMPARE(QWidget::mouseGrabber(),&view);
+    QTest::qWait(130);
+    QCOMPARE(scene.camera.eye,inactiveEye);
+    QTest::keyRelease(&view,Qt::Key_W);
+
+    QTest::keyClick(&view,Qt::Key_T);
+    QCOMPARE(scene.camera.mode,ViewMode::Plan);
+    QVERIFY(QWidget::mouseGrabber()!=&view);
+    QCoreApplication::processEvents();
+    QSignalSpy idleFrames(&view,&QOpenGLWidget::frameSwapped);
+    QTest::qWait(220);
+    QVERIFY(idleFrames.count()<=1);
 }
 
 void EditorTest::editorWorkflow() {
@@ -367,6 +408,8 @@ void EditorTest::remoteGreeting() {
     auto *view=editor.view();
     QVERIFY(view->isValid());
     QVERIFY(view->rendererError().isEmpty());
+    editor.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&editor));
     const auto folder=qEnvironmentVariable("INTERIOR3D_REMOTE_SCREENSHOTS");
     auto capture=[&](const QString &name) {
         return folder.isEmpty() || editor.grab().save(QDir(folder).filePath(name));

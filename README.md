@@ -38,7 +38,7 @@ Với generator nhiều cấu hình, thêm `--config Debug` khi build và `-C De
 | Xoay và tỷ lệ | Kéo đối tượng với công cụ tương ứng hoặc nhập trực tiếp ba trục trong bảng thuộc tính |
 | Thêm đồ | Nhấn một mục trong thư viện. Có thể lọc danh mục hoặc tìm theo tên |
 | Cảnh nhìn từ trên | Nhấn **Xem 2D (Mặt bằng)**, kéo chuột phải để pan |
-| Tham quan | WASD để đi, chuột để nhìn, Esc để thoát |
+| Tham quan | Nhấn **Tham quan (FPS)** để khóa chuột vào vùng 3D. WASD để đi, di chuột để nhìn, **T** để thoát và trả lại con trỏ |
 | Dự án | Ctrl+N, Ctrl+O, Ctrl+S. Tệp `.int3d` dùng JSON |
 | Hoàn tác và làm lại | Ctrl+Z và phím tắt làm lại mặc định của hệ điều hành |
 | Sao chép và xóa | Ctrl+D và Delete khi viewport có focus |

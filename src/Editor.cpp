@@ -569,7 +569,7 @@ void Editor::buildUi() {
     layout->addWidget(footer);
     connect(viewport,&Viewport::statsChanged,this,[this](int fps){
         refreshProjectLabel();
-        fpsLabel->setText(QString("FPS: %1").arg(fps));
+        fpsLabel->setText(fps>0 ? QString("FPS: %1").arg(fps) : QString("Đang nghỉ"));
         ratioLabel->setText(QString("%1:1").arg(double(viewport->width())/std::max(1,viewport->height()),0,'f',2));
     });
 
@@ -946,6 +946,6 @@ void Editor::showHelp() {
         "Chọn một món trong thư viện để thêm vào cảnh. Nhấn trái để chọn đối tượng.\n\n"
         "Kéo chuột phải để xoay camera. Kéo chuột giữa để pan. Lăn chuột để zoom.\n"
         "Dùng Di chuyển, Xoay hoặc Tỷ lệ rồi kéo đối tượng. Các ô XYZ cho phép chỉnh chính xác.\n"
-        "Trong chế độ tham quan, WASD di chuyển, di chuột để nhìn và Esc để thoát.\n\n"
+        "Trong chế độ tham quan, WASD di chuyển, di chuột để nhìn và nhấn T để thoát.\n\n"
         "Ctrl+N tạo mới · Ctrl+O mở · Ctrl+S lưu · Ctrl+D sao chép · Delete xóa · Ctrl+E xuất ảnh · F11 toàn màn hình.");
 }

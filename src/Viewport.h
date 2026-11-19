@@ -2,6 +2,7 @@
 
 #include "Scene.h"
 #include <QElapsedTimer>
+#include <QHash>
 #include <QOpenGLBuffer>
 #include <QOpenGLFunctions_3_3_Core>
 #include <QOpenGLShaderProgram>
@@ -50,6 +51,9 @@ protected:
     void keyPressEvent(QKeyEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
     void focusOutEvent(QFocusEvent *event) override;
+    void focusInEvent(QFocusEvent *event) override;
+    bool event(QEvent *event) override;
+    bool focusNextPrevChild(bool next) override;
 private:
     Scene &scene;
     std::unique_ptr<QOpenGLShaderProgram> shader;
@@ -68,7 +72,23 @@ private:
     QSet<int> keys;
     QString error;
     int selected = 0, frameCount = 0, roundedCount = 0;
-    bool grid = false, uniformScale = false, dragging = false, walkMouseReady = false;
+    bool grid = false, uniformScale = false, dragging = false, cursorCaptured = false;
+    bool nativeClip = false;
+    ViewMode beforeWalk = ViewMode::Orbit;
+    QPoint previousCursor;
+    QRect clippedRect;
+    int modelUniform = -1, normalUniform = -1, colorUniform = -1, materialUniform = -1;
+    struct CachedGeometry {
+        QString kind;
+        QColor color;
+        QVector<Part> parts;
+    };
+    mutable QVector3D cachedRoom;
+    mutable QHash<int,CachedGeometry> geometryCache;
+    const QVector<Part> &partsFor(const Object &object) const;
+    void captureCursor();
+    void releaseCursor(bool restorePosition = false);
+    void refreshCursorClip();
     EditTool tool = EditTool::Select;
     QPointF last, initial;
     QVector3D dragAxis;
@@ -81,7 +101,7 @@ private:
     void drawRemote(const QMatrix4x4 &transform, bool held);
     void drawTv(const Object &tv);
     void updateRemoteHint();
-    QLabel *remoteHint = nullptr;
+    QLabel *remoteHint = nullptr, *walkReticle = nullptr;
     void holdRemote();
     void releaseRemote();
     void stepRemote(float seconds);
