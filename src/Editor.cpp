@@ -761,6 +761,7 @@ void Editor::applyEdit(const Scene &value,int selected) {
 void Editor::resetScene(Scene next,const QString &file) {
     path=file;
     scene=std::move(next);
+    viewport->resetRemote();
     savedCamera=scene.camera;
     history.clear();
     viewport->select(0);

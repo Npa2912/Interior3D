@@ -45,6 +45,10 @@ Với generator nhiều cấu hình, thêm `--config Debug` khi build và `-C De
 | Xuất ảnh | Ctrl+E, chọn PNG hoặc JPEG |
 | Toàn màn hình | F11 |
 
+### Remote TV
+
+Trong phòng khách mặc định, nhấp vào remote trên bàn trà để cầm lên và hướng camera về TV. Nhấn **M** để bật hoặc tắt TV. Khi bật, TV hiện bó hoa và lần lượt hiện từng ký tự của lời chúc **“Chúc thầy Hiển 20/11 vui vẻ”**. Nhấn **X** để thả remote, sau đó có thể nhấp vào remote để nhặt lại.
+
 ## Mã nguồn
 
 - `Scene` chứa mô hình dự án, hình học nội thất, camera và đọc/ghi JSON.

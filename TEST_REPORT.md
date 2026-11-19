@@ -40,3 +40,7 @@ CTest chạy **2/2 mục thành công**. Bốn hàm Qt Test thực thi gồm `sc
 | 24. Phím tắt | PASS | Thực thi Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+D, Ctrl+E, Delete, F11, Esc và W. Làm lại được kiểm tra bằng nút toolbar |
 | Mục tiêu 60 FPS trên GPU | BLOCKED | Xvfb dùng kết xuất phần mềm. Chỉ báo đọc 39 FPS ở lần chụp bằng Qt Test, chưa có kết quả trên GPU thật |
 | F5 trực tiếp trong VS Code | BLOCKED | Máy kiểm thử không có VS Code. Đã xác nhận debug binary bằng GDB và kiểm tra cú pháp JSON cấu hình |
+
+## Bổ sung remote TV
+
+Kiểm thử `remoteGreeting` chạy trên Xvfb và Mesa llvmpipe. CTest đạt **2/2** sau khi bổ sung. Bài kiểm thử nhấp remote trên bàn, so sánh framebuffer trước và sau khi bật TV bằng M, kiểm tra chữ thay đổi theo thời gian, bật/tắt bằng M, thả bằng X và nhặt lại sau khi remote rơi.

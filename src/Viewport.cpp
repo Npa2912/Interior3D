@@ -1,11 +1,15 @@
 #include "Viewport.h"
+#include "TvGreeting.h"
 
 #include <QKeyEvent>
+#include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QtMath>
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 namespace {
 constexpr float tau = 6.283185307f;
@@ -99,8 +103,13 @@ uniform vec3 lightColor;
 uniform vec3 eye;
 uniform vec3 intensity;
 uniform int material;
+uniform sampler2D tvScreen;
 out vec4 fragment;
 void main() {
+    if(material==7 && local.z>.499) {
+        fragment=texture(tvScreen,vec2(local.x+.5,.5-local.y));
+        return;
+    }
     vec3 n=normalize(surface);
     vec3 lightVector=vec3(-.55,2.73,-.42)-world;
     float distanceSquared=dot(lightVector,lightVector);
@@ -182,6 +191,13 @@ float segmentDistance(QPointF p,QPointF a,QPointF b) {
 Viewport::Viewport(Scene &model,QWidget *parent):QOpenGLWidget(parent),scene(model) {
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(360,310);
+    remoteHint=new QLabel(this);
+    remoteHint->setAttribute(Qt::WA_TransparentForMouseEvents);
+    remoteHint->setStyleSheet(
+        "QLabel { background:rgba(28,33,45,225); color:#fff0d6;"
+        "border:1px solid #aa9174; border-radius:8px; padding:5px 9px;"
+        "font-size:13px; font-weight:600; }");
+    remoteHint->hide();
     connect(&animation,&QTimer::timeout,this,&Viewport::tick);
     connect(this,&QOpenGLWidget::frameSwapped,this,[this]{++frameCount;});
     animation.start(16);
@@ -199,6 +215,8 @@ void Viewport::cleanup() {
     makeCurrent();
     vao.destroy();
     vbo.destroy();
+    tvTexture.reset();
+    uploadedCharacters=-1;
     shader.reset();
     doneCurrent();
 }
@@ -314,6 +332,7 @@ void Viewport::paintGL() {
                    error.isEmpty()?"OpenGL 3.3":error);
         return;
     }
+    glEnable(GL_DEPTH_TEST);
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     shader->bind();
     QOpenGLVertexArrayObject::Binder binder(&vao);
@@ -331,6 +350,9 @@ void Viewport::paintGL() {
             draw(transform*part.matrix(),part.color,material,part.cylinder,rounded);
         }
     }
+    if(const auto *tv=scene.find(poweredTv);tv && tv->kind=="tv" && scene.camera.mode!=ViewMode::Plan) drawTv(*tv);
+    if(remoteState!=RemoteState::Held && (remoteState!=RemoteState::OnTable || firstObject("table")))
+        drawRemote(remoteTransform(),false);
     if(grid) {
         const int width=int(scene.room.x()),depth=int(scene.room.z());
         for(int i=-width;i<=width;++i) {
@@ -347,7 +369,13 @@ void Viewport::paintGL() {
         }
     }
     if(const auto *o=scene.find(selected);o && visible(*o) && scene.camera.mode!=ViewMode::Walk) drawSelection(*o);
+    if(remoteState==RemoteState::Held && scene.camera.mode!=ViewMode::Plan) {
+        glDisable(GL_DEPTH_TEST);
+        drawRemote(remoteTransform(),true);
+        glEnable(GL_DEPTH_TEST);
+    }
     shader->release();
+
 }
 
 QPointF Viewport::project(QVector3D world) const {
@@ -372,6 +400,13 @@ int Viewport::pick(QPointF pixel) const {
             // Keeping the transformed direction unnormalized preserves world-ray distance.
             if(intersectBox(local.map(near),local.mapVector(direction),closest,part.cylinder)) id=o.id;
         }
+    }
+    if(remoteState!=RemoteState::Held && (remoteState!=RemoteState::OnTable || firstObject("table"))) {
+        auto volume=remoteTransform();
+        volume.scale(.104f,.046f,.24f);
+        bool invertible=false;
+        const auto local=volume.inverted(&invertible);
+        if(invertible && intersectBox(local.map(near),local.mapVector(direction),closest,false)) return remoteHit;
     }
     return id;
 }
@@ -410,7 +445,14 @@ void Viewport::mousePressEvent(QMouseEvent *event) {
     last=initial=event->position();
     walkMouseReady=true;
     dragAxis={};
-    if(button!=Qt::LeftButton || scene.camera.mode==ViewMode::Walk) return;
+    if(button!=Qt::LeftButton) return;
+    const int hit=pick(initial);
+    if(hit==remoteHit) {
+        holdRemote();
+        button=Qt::NoButton;
+        return;
+    }
+    if(scene.camera.mode==ViewMode::Walk) return;
     if(const auto *o=scene.find(selected);o && !o->locked && tool==EditTool::Move) {
         const auto origin=o->position+QVector3D(0,.35f,0);
         float best=11;
@@ -420,7 +462,7 @@ void Viewport::mousePressEvent(QMouseEvent *event) {
         }
         if(!dragAxis.isNull()) return;
     }
-    select(pick(initial));
+    select(hit);
 }
 
 void Viewport::mouseMoveEvent(QMouseEvent *event) {
@@ -505,6 +547,22 @@ void Viewport::wheelEvent(QWheelEvent *event) {
 }
 
 void Viewport::keyPressEvent(QKeyEvent *event) {
+    if(remoteState==RemoteState::Held && (event->key()==Qt::Key_M || event->key()==Qt::Key_X)) {
+        if(!event->isAutoRepeat()) {
+            if(event->key()==Qt::Key_X) releaseRemote();
+            else if(const auto *tv=firstObject("tv")) {
+                if(poweredTv==tv->id) poweredTv=0;
+                else {
+                    poweredTv=tv->id;
+                    uploadedCharacters=-1;
+                    typing.start();
+                }
+                update();
+            }
+        }
+        event->accept();
+        return;
+    }
     if(scene.camera.mode!=ViewMode::Walk) { QOpenGLWidget::keyPressEvent(event); return; }
     if(event->key()==Qt::Key_Escape) setMode(ViewMode::Orbit);
     else keys.insert(event->key());
@@ -530,6 +588,7 @@ void Viewport::focusOutEvent(QFocusEvent *event) {
 void Viewport::tick() {
     const float seconds=std::min(.05f,step.restart()/1000.f);
     if(!isVisible()) return;
+    stepRemote(seconds);
     if(scene.camera.mode==ViewMode::Walk && !keys.isEmpty()) {
         auto &camera=scene.camera;
         auto front=camera.forward();
@@ -543,9 +602,182 @@ void Viewport::tick() {
         camera.eye.setY(std::clamp(camera.eye.y(),.5f,scene.room.y()-.15f));
         camera.eye.setZ(std::clamp(camera.eye.z(),-scene.room.z()/2+.23f,scene.room.z()/2-.23f));
     }
+    updateRemoteHint();
     if(meter.elapsed()>=1000) {
         emit statsChanged(qRound(frameCount*1000./meter.restart()));
         frameCount=0;
     }
     update();
+}
+
+const Object *Viewport::firstObject(const QString &kind) const {
+    for(const auto &object:std::as_const(scene.objects))
+        if(object.kind==kind) return &object;
+    return nullptr;
+}
+
+void Viewport::resetRemote() {
+    remoteState=RemoteState::OnTable;
+    poweredTv=0;
+    typing.invalidate();
+    uploadedCharacters=-1;
+    update();
+}
+
+QMatrix4x4 Viewport::remoteTransform() const {
+    QMatrix4x4 transform;
+    if(remoteState==RemoteState::Held) {
+        transform=scene.camera.view().inverted();
+        transform.translate(.205f,-.165f,-.53f);
+        transform.rotate(-23,0,0,1);
+        transform.rotate(33,1,0,0);
+    } else if(remoteState==RemoteState::OnTable) {
+        if(const auto *table=firstObject("table")) transform=table->matrix();
+        transform.translate(.23f,.499f,.238f);
+        transform.rotate(-19,0,1,0);
+    } else {
+        transform.translate(remotePosition);
+        transform.rotate(18,0,1,0);
+        transform.rotate(remoteSpin,1,0,0);
+    }
+    return transform;
+}
+
+void Viewport::drawRemote(const QMatrix4x4 &transform,bool held) {
+    auto part=[&](QVector3D position,QVector3D size,const char *color,float roll=0,bool round=true) {
+        auto matrix=transform;
+        matrix.translate(position);
+        matrix.rotate(roll,0,0,1);
+        matrix.scale(size);
+        draw(matrix,QColor(color),"Phát sáng",false,round);
+    };
+    if(held) {
+        part({.052f,-.037f,.062f},{.065f,.068f,.105f},"#ba795a",16);
+        part({.075f,-.057f,.117f},{.089f,.079f,.101f},"#d6b79d",22);
+        part({.100f,-.076f,.153f},{.097f,.083f,.091f},"#c8a488",22);
+        for(int i=0;i<4;++i)
+            part({-.040f,-.017f,-.026f+i*.026f},{.039f,.043f,.018f},"#dd9c79",12);
+    }
+    part({0,0,0},{.080f,.028f,.195f},"#263044");
+    part({0,.015f,0},{.071f,.007f,.180f},"#374254");
+    part({.018f,.022f,-.065f},{.023f,.010f,.024f},poweredTv?"#ff6358":"#d64143");
+    part({0,.022f,-.023f},{.038f,.010f,.034f},"#7f91a4");
+    part({0,.029f,-.023f},{.021f,.007f,.021f},"#3d5065");
+    for(int row=0;row<3;++row) for(int column=-1;column<=1;++column)
+        part({column*.017f,.022f,.013f+row*.023f},{.011f,.008f,.012f},"#adbac5");
+    if(held) part({.043f,.022f,.046f},{.027f,.032f,.058f},"#edab87",-16);
+}
+
+void Viewport::drawTv(const Object &tv) {
+    const int characters=std::min(int(greetingText().size()),int(typing.elapsed()/135));
+    if(!tvTexture) {
+        tvTexture=std::make_unique<QOpenGLTexture>(QOpenGLTexture::Target2D);
+        tvTexture->setFormat(QOpenGLTexture::RGBA8_UNorm);
+        tvTexture->setSize(1024,536);
+        tvTexture->setMipLevels(1);
+        tvTexture->allocateStorage(QOpenGLTexture::RGBA,QOpenGLTexture::UInt8);
+        tvTexture->setMinMagFilters(QOpenGLTexture::Linear,QOpenGLTexture::Linear);
+        tvTexture->setWrapMode(QOpenGLTexture::ClampToEdge);
+    }
+    if(uploadedCharacters!=characters) {
+        const auto card=greetingCard(characters);
+        tvTexture->setData(QOpenGLTexture::RGBA,QOpenGLTexture::UInt8,card.constBits());
+        uploadedCharacters=characters;
+    }
+    auto panel=tv.matrix();
+    panel.translate(0,.51f,.052f);
+    panel.scale(1.91f,1.f,.002f);
+    tvTexture->bind(0);
+    shader->setUniformValue("tvScreen",0);
+    shader->setUniformValue("model",panel);
+    shader->setUniformValue("normalMatrix",panel.normalMatrix());
+    shader->setUniformValue("material",7);
+    glDrawArrays(GL_TRIANGLES,0,cubeCount);
+    tvTexture->release(0);
+}
+
+void Viewport::updateRemoteHint() {
+    QString text;
+    QPointF marker;
+    if(remoteState==RemoteState::Held) {
+        if(scene.camera.mode!=ViewMode::Plan) text="M  Bật/tắt TV     X  Thả remote";
+    } else if(remoteState==RemoteState::Falling) {
+        text="Đang thả remote…";
+    } else if(remoteState!=RemoteState::OnTable || firstObject("table")) {
+        const auto center=remoteTransform().map(QVector3D());
+        const auto clip=viewProjection()*QVector4D(center,1);
+        marker=project(center);
+        if(clip.w()>0 && rect().adjusted(70,98,-70,-10).contains(marker.toPoint()) && pick(marker)==remoteHit)
+            text="↓  Nhấp để nhặt remote";
+    }
+    if(text.isEmpty()) {
+        remoteHint->hide();
+        return;
+    }
+    if(remoteHint->text()!=text) {
+        remoteHint->setText(text);
+        remoteHint->adjustSize();
+    }
+    const int w=remoteHint->width();
+    const bool tagged=remoteState==RemoteState::OnTable || remoteState==RemoteState::Dropped;
+    const int x=tagged?std::clamp(qRound(marker.x())-w/2,4,std::max(4,width()-w-4)):18;
+    const int y=tagged?qRound(marker.y())-remoteHint->height()-4:height()-remoteHint->height()-15;
+    remoteHint->move(x,y);
+    remoteHint->show();
+}
+
+void Viewport::holdRemote() {
+    remoteState=RemoteState::Held;
+    select(0);
+    if(scene.camera.mode!=ViewMode::Walk) {
+        if(const auto *tv=firstObject("tv")) {
+            const auto transform=tv->matrix();
+            const auto center=transform.map(QVector3D(0,.51f,.055f));
+            QVector3D normal=transform.mapVector({0,0,1});
+            normal.setY(0);
+            normal.normalize();
+            if(normal.isNull()) normal={-1,0,0};
+            const auto cameraRight=QVector3D::crossProduct(-normal,{0,1,0});
+            auto &camera=scene.camera;
+            camera.eye=center+normal*2.45f+cameraRight*.26f;
+            camera.eye.setX(std::clamp(camera.eye.x(),-scene.room.x()/2+.25f,scene.room.x()/2-.25f));
+            camera.eye.setZ(std::clamp(camera.eye.z(),-scene.room.z()/2+.25f,scene.room.z()/2-.25f));
+            camera.eye.setY(std::clamp(center.y()+.13f,.54f,scene.room.y()-.2f));
+            const auto aim=(center-camera.eye).normalized();
+            camera.walkYaw=qRadiansToDegrees(std::atan2(aim.z(),aim.x()));
+            camera.walkPitch=qRadiansToDegrees(std::asin(aim.y()));
+        }
+        setMode(ViewMode::Walk);
+    }
+    update();
+}
+
+void Viewport::releaseRemote() {
+    remotePosition=remoteTransform().map(QVector3D());
+    remoteVelocity=scene.camera.forward()*1.05f+QVector3D(0,.2f,0);
+    remoteSpin=33;
+    remoteState=RemoteState::Falling;
+    update();
+}
+
+void Viewport::stepRemote(float seconds) {
+    if(remoteState!=RemoteState::Falling) return;
+    remoteVelocity.setY(remoteVelocity.y()-9.81f*seconds);
+    remotePosition+=remoteVelocity*seconds;
+    remoteSpin+=385.f*seconds;
+    const float x=std::max(.06f,scene.room.x()/2-.1f),z=std::max(.06f,scene.room.z()/2-.1f);
+    remotePosition.setX(std::clamp(remotePosition.x(),-x,x));
+    remotePosition.setZ(std::clamp(remotePosition.z(),-z,z));
+    float height=.055f;
+    if(const auto *table=firstObject("table")) {
+        const QVector3D top=table->matrix().map(QVector3D(0,.4825f,0));
+        const auto local=table->matrix().inverted().map(QVector3D(remotePosition.x(),top.y(),remotePosition.z()));
+        if(std::abs(local.x())<.71f && std::abs(local.z())<.39f)
+            height=std::max(height,top.y()+.016f);
+    }
+    if(remotePosition.y()<=height) {
+        remotePosition.setY(height);
+        remoteSpin=0;
+        remoteState=RemoteState::Dropped;
+    }
 }

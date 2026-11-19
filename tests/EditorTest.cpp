@@ -7,6 +7,7 @@
 #include <QColorDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -27,6 +28,7 @@ private slots:
     void viewportWorkflow();
     void editorWorkflow();
     void projectActions();
+    void remoteGreeting();
 };
 
 void EditorTest::sceneRoundTrip() {
@@ -356,6 +358,68 @@ void EditorTest::projectActions() {
     QVERIFY(checkDialog(nav("Camera"),"Camera"));
     QVERIFY(checkDialog(nav("Render ảnh"),"Xuất ảnh"));
     QVERIFY(checkDialog(nav("Quản lý dự án"),"Quản lý dự án"));
+}
+
+void EditorTest::remoteGreeting() {
+    Editor editor;
+    editor.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&editor));
+    auto *view=editor.view();
+    QVERIFY(view->isValid());
+    QVERIFY(view->rendererError().isEmpty());
+    const auto folder=qEnvironmentVariable("INTERIOR3D_REMOTE_SCREENSHOTS");
+    auto capture=[&](const QString &name) {
+        return folder.isEmpty() || editor.grab().save(QDir(folder).filePath(name));
+    };
+    const Object *table=nullptr;
+    const Object *tv=nullptr;
+    for(const auto &o:editor.model().objects) {
+        if(o.kind=="table") table=&o;
+        if(o.kind=="tv") tv=&o;
+    }
+    QVERIFY(table && tv);
+    const QPoint point=view->project(table->matrix().map(QVector3D(.23f,.499f,.238f))).toPoint();
+    QCOMPARE(view->pick(point),-1);
+    QTest::qWait(100);
+    QVERIFY(capture("01-remote-tren-ban.png"));
+    QTest::mouseClick(view,Qt::LeftButton,Qt::NoModifier,point);
+    QCOMPARE(editor.model().camera.mode,ViewMode::Walk);
+    const auto screen=view->project(tv->matrix().map(QVector3D(-.6f,.75f,.054f))).toPoint();
+    const auto off=view->grabFramebuffer();
+    QVERIFY(off.rect().contains(screen));
+    QTest::keyClick(view,Qt::Key_M);
+    const auto early=view->grabFramebuffer();
+    QVERIFY(early.pixelColor(screen)!=off.pixelColor(screen));
+    QTest::qWait(1580);
+    const auto middle=view->grabFramebuffer();
+    QVERIFY(early!=middle);
+    QVERIFY(capture("02-TV-dang-hien-chu.png"));
+    QTest::qWait(2150);
+    const auto full=view->grabFramebuffer();
+    QVERIFY(full!=middle);
+    QVERIFY(capture("03-TV-loi-chuc-va-bo-hoa.png"));
+    QTest::keyClick(view,Qt::Key_M);
+    QCOMPARE(view->grabFramebuffer().pixelColor(screen),off.pixelColor(screen));
+    QTest::keyClick(view,Qt::Key_M);
+    QTest::keyClick(view,Qt::Key_X);
+    QTest::qWait(130);
+    QVERIFY(capture("04-tha-remote.png"));
+    QTest::keyClick(view,Qt::Key_M);
+    QVERIFY(view->grabFramebuffer().pixelColor(screen)!=off.pixelColor(screen));
+    view->setMode(ViewMode::Plan);
+    QTest::qWait(700);
+    // The remote falls to the floor in front of the first-person camera.
+    const auto floorNear=view->project({1.77f,.055f,-.20f}).toPoint();
+    QPoint remoteOnFloor;
+    for(int x=-19;x<=19 && remoteOnFloor.isNull();x+=2)
+        for(int y=-15;y<=15;y+=2) {
+            const QPoint p=floorNear+QPoint(x,y);
+            if(view->pick(p)==-1) { remoteOnFloor=p; break; }
+        }
+    QVERIFY(!remoteOnFloor.isNull());
+    QVERIFY(capture("05-remote-da-rot.png"));
+    QTest::mouseClick(view,Qt::LeftButton,Qt::NoModifier,remoteOnFloor);
+    QCOMPARE(editor.model().camera.mode,ViewMode::Walk);
 }
 
 int main(int argc,char **argv) {
