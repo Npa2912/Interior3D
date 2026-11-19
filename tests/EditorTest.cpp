@@ -285,6 +285,30 @@ void EditorTest::verticalPlacement() {
     QVERIFY(scene.find(plant)->position.x()<.3f);
     QVERIFY(std::abs(scene.find(plant)->position.y()-.4825f)<.001f);
     QCOMPARE(scene.find(table)->position,QVector3D());
+    view.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&view));
+    const auto grip=view.project(scene.find(plant)->position).toPoint();
+    QTest::mouseClick(&view,Qt::LeftButton,Qt::NoModifier,grip);
+    QCOMPARE(view.selection(),plant);
+    const auto camera=scene.camera;
+    for(const auto key:{Qt::Key_Left,Qt::Key_Right}) {
+        const auto prior=scene.find(plant)->rotation.y();
+        QTest::keyPress(&view,key);
+        QTRY_VERIFY(key==Qt::Key_Left?scene.find(plant)->rotation.y()<prior:scene.find(plant)->rotation.y()>prior);
+        QTest::keyRelease(&view,key);
+    }
+    QTest::keyPress(&view,Qt::Key_Up);
+    QTest::qWait(80);
+    QTest::keyRelease(&view,Qt::Key_Up);
+    QCOMPARE(scene.find(plant)->rotation.x(),0.f);
+    QTest::mouseClick(&view,Qt::RightButton,Qt::NoModifier,grip);
+    QCOMPARE(view.selection(),0);
+    const auto releasedRotation=scene.find(plant)->rotation;
+    QTest::keyPress(&view,Qt::Key_Left);
+    QTest::qWait(80);
+    QTest::keyRelease(&view,Qt::Key_Left);
+    QCOMPARE(scene.find(plant)->rotation,releasedRotation);
+    QVERIFY(scene.camera==camera);
 }
 
 void EditorTest::editorWorkflow() {

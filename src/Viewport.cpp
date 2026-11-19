@@ -526,6 +526,7 @@ void Viewport::setMode(ViewMode mode) {
     if(mode==ViewMode::Walk && scene.camera.mode!=ViewMode::Walk)
         beforeWalk=scene.camera.mode;
     scene.camera.mode=mode;
+    keyboardRotationTarget=0;
     resetCameraInput();
     button=Qt::NoButton;
     setMouseTracking(mode==ViewMode::Walk);
@@ -622,7 +623,7 @@ void Viewport::mousePressEvent(QMouseEvent *event) {
     last=initial;
     dragAxis={};
     finishKeyboardRotation();
-    if(button==Qt::RightButton && scene.camera.mode==ViewMode::Orbit) select(0);
+    if(button==Qt::RightButton && scene.camera.mode!=ViewMode::Walk) select(0);
     if(button!=Qt::LeftButton) return;
     const int hit=pick(initial);
     if(hit==remoteHit) {
@@ -641,7 +642,7 @@ void Viewport::mousePressEvent(QMouseEvent *event) {
         if(!dragAxis.isNull()) return;
     }
     select(hit);
-    if(scene.camera.mode==ViewMode::Orbit) {
+    if(scene.camera.mode!=ViewMode::Walk) {
         const auto *object=std::as_const(scene).find(hit);
         keyboardRotationTarget=object && !isArchitecture(*object)?hit:0;
     }
@@ -802,8 +803,9 @@ void Viewport::keyPressEvent(QKeyEvent *event) {
     }
     const bool orbit=scene.camera.mode==ViewMode::Orbit;
     const auto *end=navigationKeys+(orbit?navigationKeyCount:movementKeyCount);
-    if((orbit || cursorCaptured) &&
-       std::find(navigationKeys,end,event->key())!=end &&
+    const bool planRotation=scene.camera.mode==ViewMode::Plan && keyboardRotationTarget &&
+                            (event->key()==Qt::Key_Left || event->key()==Qt::Key_Right);
+    if((planRotation || ((orbit || cursorCaptured) && std::find(navigationKeys,end,event->key())!=end)) &&
        !(event->modifiers() & shortcutModifiers)) {
         if(!event->isAutoRepeat() && hasFocus() && window()->isActiveWindow()) {
             const int key=event->key();
@@ -889,8 +891,8 @@ bool Viewport::moveCamera(float seconds) {
 #endif
     auto &camera=scene.camera;
     const bool walk=camera.mode==ViewMode::Walk;
-    if(!hasFocus() || !window()->isActiveWindow() ||
-       (walk ? !cursorCaptured : camera.mode!=ViewMode::Orbit)) return false;
+    const bool plan=camera.mode==ViewMode::Plan;
+    if(!hasFocus() || !window()->isActiveWindow() || (walk && !cursorCaptured)) return false;
 
     unsigned down=0;
 #ifdef Q_OS_WIN
@@ -905,7 +907,7 @@ bool Viewport::moveCamera(float seconds) {
         return false;
     }
     const auto held=[&](int i){return int((down & (1u<<i)) || keys.contains(navigationKeys[i]));};
-    const auto horizontal=held(5)-held(4), vertical=held(6)-held(7);
+    const auto horizontal=held(5)-held(4), vertical=plan?0:held(6)-held(7);
     bool turned=false;
     if(!walk) {
         auto *object=keyboardRotationTarget==selected && selected?scene.find(selected):nullptr;
@@ -920,7 +922,7 @@ bool Viewport::moveCamera(float seconds) {
             turned=true;
         } else {
             finishKeyboardRotation();
-            if(!object && (!cameraArrowTap.isValid() || cameraArrowTap.elapsed()>=180)) {
+            if(!plan && !object && (!cameraArrowTap.isValid() || cameraArrowTap.elapsed()>=180)) {
                 const float yaw=wrap(camera.yaw+horizontal*85.f*seconds);
                 const float pitch=std::clamp(camera.pitch+vertical*65.f*seconds,-85.f,85.f);
                 turned=yaw!=camera.yaw || pitch!=camera.pitch;
@@ -929,6 +931,7 @@ bool Viewport::moveCamera(float seconds) {
             }
         }
     }
+    if(plan) return turned;
     const int forward=held(0)-held(2);
     const int sideways=held(3)-held(1);
     if(forward==0 && sideways==0) return turned;

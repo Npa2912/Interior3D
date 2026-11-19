@@ -37,7 +37,7 @@ Với generator nhiều cấu hình, thêm `--config Debug` khi build và `-C De
 | Di chuyển | Kéo vật trên mặt sàn bằng công cụ **Chọn** hoặc **Di chuyển**. Trong **Di chuyển**, có thể kéo tay nắm đỏ, xanh lá, xanh dương theo X, Y, Z. Giữ **Shift** và kéo lên/xuống để đổi độ cao. Giữ **Ctrl** khi thả chuột để đặt đáy vật lên mặt đồ nội thất ngay bên dưới |
 | Xoay và tỷ lệ | Trong Xem 3D, nhấp vật rồi giữ ←/→ để xoay quanh trục Y, ↑/↓ để xoay quanh trục X. Nhấp phải để bỏ chọn. Có thể nhập vị trí, góc xoay và tỷ lệ XYZ trong bảng thuộc tính rồi nhấn Enter |
 | Thêm đồ | Nhấn một mục trong thư viện. Có thể lọc danh mục hoặc tìm theo tên |
-| Cảnh nhìn từ trên | Nhấn **Xem 2D (Mặt bằng)**, kéo chuột phải để pan |
+| Cảnh nhìn từ trên | Nhấn **Xem 2D (Mặt bằng)**. Nhấp trái vào vật rồi giữ **←/→** để xoay. Nhấp phải để bỏ chọn, kéo chuột phải để pan |
 | Tham quan | Nhấn **Tham quan (FPS)** để khóa chuột vào vùng 3D. WASD để đi, di chuột để nhìn, **T** để thoát và trả lại con trỏ |
 | Dự án | Ctrl+N, Ctrl+O, Ctrl+S. Tệp `.int3d` dùng JSON |
 | Hoàn tác và làm lại | Ctrl+Z và phím tắt làm lại mặc định của hệ điều hành |
