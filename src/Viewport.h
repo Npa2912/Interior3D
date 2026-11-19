@@ -11,6 +11,7 @@
 #include <QOpenGLVertexArrayObject>
 #include <QOpenGLWidget>
 #include <QTimer>
+#include <array>
 #include <memory>
 
 class QLabel;
@@ -58,6 +59,13 @@ private:
     Scene &scene;
     std::unique_ptr<QOpenGLShaderProgram> shader;
     std::unique_ptr<QOpenGLTexture> tvTexture;
+    struct WallPhoto {
+        std::unique_ptr<QOpenGLTexture> texture;
+        float width = 0, height = 0;
+    };
+    std::array<WallPhoto,3> wallPhotos;
+    void loadWallPhotos();
+    void drawWallPhotos(const QMatrix4x4 &transform);
     enum class RemoteState { OnTable, Held, Falling, Dropped };
     RemoteState remoteState = RemoteState::OnTable;
     QVector3D remotePosition, remoteVelocity;

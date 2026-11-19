@@ -131,6 +131,10 @@ void main() {
         fragment=texture(tvScreen,vec2(local.x+.5,.5-local.y));
         return;
     }
+    if(material==8 && local.x>.499) {
+        fragment=texture(tvScreen,vec2(.5-local.z,.5-local.y));
+        return;
+    }
     vec3 n=normalize(surface);
     vec3 lightVector=vec3(-.55,2.73,-.42)-world;
     float distanceSquared=dot(lightVector,lightVector);
@@ -254,6 +258,7 @@ void Viewport::cleanup() {
     vao.destroy();
     vbo.destroy();
     tvTexture.reset();
+    for(auto &photo:wallPhotos) photo.texture.reset();
     uploadedCharacters=-1;
     shader.reset();
     doneCurrent();
@@ -275,6 +280,7 @@ void Viewport::initializeGL() {
     }
     error.clear();
     shader=std::move(program);
+    loadWallPhotos();
     modelUniform=shader->uniformLocation("model");
     normalUniform=shader->uniformLocation("normalMatrix");
     colorUniform=shader->uniformLocation("color");
@@ -403,10 +409,15 @@ void Viewport::paintGL() {
         if(!visible(o)) continue;
         const auto transform=o.matrix();
         for(const auto &part: partsFor(o)) {
+            if(o.kind=="art" && part.tint) {
+                const int index=1-qRound(part.center.z()/.53f);
+                if(wallPhotos.at(index).texture) continue;
+            }
             const QString material=part.tint && o.material!="Mặc định" ? o.material : part.material;
             const bool rounded=part.material=="Vải" && (o.kind=="sofa" || o.kind=="chair" || o.kind=="bed");
             draw(transform*part.matrix(),part.color,material,part.cylinder,rounded);
         }
+        if(o.kind=="art") drawWallPhotos(transform);
     }
     if(const auto *tv=std::as_const(scene).find(poweredTv);tv && tv->kind=="tv" && scene.camera.mode!=ViewMode::Plan) drawTv(*tv);
     if(remoteState!=RemoteState::Held && (remoteState!=RemoteState::OnTable || firstObject("table")))
@@ -883,6 +894,38 @@ void Viewport::drawRemote(const QMatrix4x4 &transform,bool held) {
     for(int row=0;row<3;++row) for(int column=-1;column<=1;++column)
         part({column*.017f,.022f,.013f+row*.023f},{.011f,.008f,.012f},"#adbac5");
     if(held) part({.043f,.022f,.046f},{.027f,.032f,.058f},"#edab87",-16);
+}
+
+void Viewport::loadWallPhotos() {
+    for(int i=0;i<int(wallPhotos.size());++i) {
+        const QImage image(QString(":/assets/wall-%1.jpg").arg(i+1));
+        if(image.isNull()) continue;
+        auto &photo=wallPhotos[i];
+        // Fit inside the frame without cropping or stretching the original photo.
+        const float aspect=float(image.width())/image.height();
+        photo.width=std::min(.416f,.80f*aspect);
+        photo.height=photo.width/aspect;
+        photo.texture=std::make_unique<QOpenGLTexture>(image);
+        photo.texture->setMinMagFilters(QOpenGLTexture::LinearMipMapLinear,QOpenGLTexture::Linear);
+        photo.texture->setWrapMode(QOpenGLTexture::ClampToEdge);
+    }
+}
+
+void Viewport::drawWallPhotos(const QMatrix4x4 &transform) {
+    for(int i=0;i<int(wallPhotos.size());++i) {
+        const auto &photo=wallPhotos[i];
+        if(!photo.texture) continue;
+        auto panel=transform;
+        panel.translate(.046f,0,(1-i)*.53f);
+        panel.scale(.002f,photo.height,photo.width);
+        photo.texture->bind(0);
+        shader->setUniformValue("tvScreen",0);
+        shader->setUniformValue(modelUniform,panel);
+        shader->setUniformValue(normalUniform,panel.normalMatrix());
+        shader->setUniformValue(materialUniform,8);
+        glDrawArrays(GL_TRIANGLES,0,cubeCount);
+        photo.texture->release(0);
+    }
 }
 
 void Viewport::drawTv(const Object &tv) {
