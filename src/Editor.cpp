@@ -485,16 +485,29 @@ void Editor::buildUi() {
     for(int row=0;row<3;++row) {
         auto *line=new QHBoxLayout;
         for(int col=0;col<3;++col) {
-            auto *f=number(row==2?.05:row==1?-360:-100,row==2?20:row==1?360:100,row==1?5:.1);
+            auto *f=new QLineEdit;
+            f->setAlignment(Qt::AlignCenter);
+            f->setMaxLength(24);
+            f->setInputMethodHints(Qt::ImhFormattedNumbersOnly);
+            f->setToolTip("Nhập số rồi nhấn Enter");
             f->setObjectName(QString("transform%1%2").arg(row).arg(col));
             f->setAccessibleName(names[row]+QString(" %1").arg(QChar::fromLatin1("XYZ"[col])));
             f->setMinimumWidth(42);
             transform[row][col]=f;
             line->addWidget(f,1);
-            connect(f,&QDoubleSpinBox::valueChanged,this,[this,row,col](double value){
-                if(syncing) return;
+            connect(f,&QLineEdit::editingFinished,this,[this,f,row,col]{
+                if(syncing || !f->isModified()) return;
                 auto *o=scene.find(viewport->selection());
                 if(!o || o->locked) return;
+                f->setModified(false);
+                bool ok=false;
+                const double value=f->text().trimmed().replace(',','.').toDouble(&ok);
+                const double min=row==2?.05:row==1?-360:-100;
+                const double max=row==2?20:row==1?360:100;
+                if(!ok || !(value>=min && value<=max)) {
+                    refresh();
+                    return;
+                }
                 edit("Chỉnh thuộc tính",[&]{
                     if(row==0) o->position[col]=float(value);
                     else if(row==1) o->rotation[col]=float(value);
@@ -723,7 +736,9 @@ void Editor::refresh() {
         objectName->setReadOnly(o->locked);
         const QVector3D values[]{o->position,o->rotation,o->scale};
         for(int row=0;row<3;++row) for(int col=0;col<3;++col) {
-            transform[row][col]->setValue(values[row][col]);
+            auto *field=transform[row][col];
+            if(!field->hasFocus() || !field->isModified() || field->isReadOnly()!=o->locked)
+                field->setText(QString::number(values[row][col],'f',2));
             transform[row][col]->setReadOnly(o->locked);
         }
         material->setCurrentText(o->material);

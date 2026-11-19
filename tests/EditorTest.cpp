@@ -284,16 +284,16 @@ void EditorTest::editorWorkflow() {
     const int id=editor.view()->selection();
     QVERIFY(editor.model().find(id));
     QCOMPARE(editor.model().find(id)->kind,QString("plant"));
-    auto *x=editor.findChild<QDoubleSpinBox *>("transform00");
-    auto *rotation=editor.findChild<QDoubleSpinBox *>("transform11");
-    auto *scale=editor.findChild<QDoubleSpinBox *>("transform22");
+    auto *x=editor.findChild<QLineEdit *>("transform00");
+    auto *rotation=editor.findChild<QLineEdit *>("transform11");
+    auto *scale=editor.findChild<QLineEdit *>("transform22");
     auto *material=editor.findChild<QComboBox *>("objectMaterial");
     auto *locked=editor.findChild<QCheckBox *>("objectLock");
     QVERIFY(x && rotation && scale && material && locked);
     const auto old=editor.model().find(id)->position.x();
-    x->setFocus();
+    QTest::mouseClick(x,Qt::LeftButton);
     QTest::keyClick(x,Qt::Key_A,Qt::ControlModifier);
-    QTest::keyClicks(x,"1.25");
+    QTest::keyClicks(x,"1,25");
     QTest::keyClick(x,Qt::Key_Return);
     QCOMPARE(editor.model().find(id)->position.x(),1.25f);
     auto tool=[&](const QString &name) {
@@ -316,6 +316,11 @@ void EditorTest::editorWorkflow() {
     QTest::keyClick(scale,Qt::Key_Return);
     QCOMPARE(editor.model().find(id)->rotation.y(),42.f);
     QCOMPARE(editor.model().find(id)->scale.z(),1.7f);
+    QTest::keyClick(scale,Qt::Key_A,Qt::ControlModifier);
+    QTest::keyClicks(scale,"0");
+    QTest::keyClick(scale,Qt::Key_Return);
+    QCOMPARE(editor.model().find(id)->scale.z(),1.7f);
+    QCOMPARE(scale->text(),QString("1.70"));
     // The model is draggable immediately after insertion, with the default Select tool.
     auto *view=editor.view();
     const auto initialPosition=editor.model().find(id)->position;
@@ -486,11 +491,14 @@ void EditorTest::projectActions() {
     const auto file=folder.filePath("first.int3d");
     QVERIFY(sendFileShortcut(Qt::Key_S,Qt::ControlModifier,file));
     QVERIFY(QFileInfo::exists(file));
-    auto *x=editor.findChild<QDoubleSpinBox *>("transform00");
+    auto *x=editor.findChild<QLineEdit *>("transform00");
     QVERIFY(x);
     const int table=editor.view()->selection();
     const float previous=editor.model().find(table)->position.x();
-    x->setValue(1.1);
+    QTest::mouseClick(x,Qt::LeftButton);
+    QTest::keyClick(x,Qt::Key_A,Qt::ControlModifier);
+    QTest::keyClicks(x,"1.1");
+    QTest::keyClick(x,Qt::Key_Return);
     QVERIFY(focusViewport());
     QTest::keyClick(editor.view(),Qt::Key_Z,Qt::ControlModifier);
     QCOMPARE(editor.model().find(table)->position.x(),previous);

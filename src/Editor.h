@@ -10,7 +10,6 @@ class QAction;
 class QButtonGroup;
 class QCheckBox;
 class QComboBox;
-class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -45,7 +44,7 @@ private:
     QPushButton *objectColor = nullptr;
     QCheckBox *locked = nullptr, *uniform = nullptr;
     QButtonGroup *categories = nullptr, *navigation = nullptr, *views = nullptr;
-    std::array<std::array<QDoubleSpinBox *,3>,3> transform{};
+    std::array<std::array<QLineEdit *,3>,3> transform{};
     bool syncing = false;
     bool draggingObject = false;
 
